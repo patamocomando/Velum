@@ -1,0 +1,7 @@
+{
+  "name": "VELUM",
+  "description": "A premium lifestyle relationship app focused on privacy, consent, and open-minded connections in the liberal world.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
