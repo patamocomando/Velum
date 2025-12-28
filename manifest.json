@@ -1,0 +1,24 @@
+
+{
+  "name": "VELUM Noir Society",
+  "short_name": "VELUM",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#070708",
+  "theme_color": "#070708",
+  "description": "Premium relationship app for private and liberal connections.",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3534/3534139.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3534/3534139.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
