@@ -1,25 +1,23 @@
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  Shield, Heart, MessageSquare, User, Lock, MapPin, ArrowRight, Camera, 
-  Ghost, Send, Key, ChevronLeft, X, Check, Plus, Mail, Eye, EyeOff, 
-  Sparkles, Wine, Music, Flame, Coffee, CameraOff, MessageCircle, Navigation, Download
+  Shield, Heart, User, Lock, MapPin, ArrowRight, Ghost, Send, Key, 
+  X, Check, Plus, MessageCircle, Globe, LogOut, Zap, Users, Search,
+  Eye, EyeOff, Sparkles, Info, Mail, Phone
 } from 'lucide-react';
-import { AppState, Objective, Gender, Profile, ChatSession, Message, UserLocation } from './types';
+import { AppState, Objective, Gender, Profile, ChatSession } from './types';
 import { MOCK_USER, MOCK_PROFILES, STATES_CITIES, APP_ID } from './constants';
 import { calculateDistance, generateId } from './utils';
 import { Button, Input, Card, Badge, Header } from './components/UI';
 import { GoogleGenAI } from "@google/genai";
 
-// Fix: Using CDN imports for Firebase to resolve "Module 'firebase/app' has no exported member 'initializeApp'"
-// and ensure compatibility in environments where standard imports might be incorrectly resolved.
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js';
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, addDoc, query, orderBy, Timestamp } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js';
+// Firebase imports (Simulado para comportamento customizado)
+import { initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 
-// Note: In a real Vercel production, use process.env.VITE_FIREBASE_CONFIG
 const firebaseConfig = {
-  apiKey: "AIzaSyPlaceholder", // USUÁRIO DEVE CONFIGURAR NO FIREBASE CONSOLE
+  apiKey: "AIzaSyPlaceholder", 
   authDomain: "velum-app.firebaseapp.com",
   projectId: "velum-app",
   storageBucket: "velum-app.appspot.com",
@@ -31,471 +29,455 @@ let db: any;
 let auth: any;
 
 try {
-  // Only attempt if not already initialized
   const app = initializeApp(firebaseConfig);
   db = getFirestore(app);
   auth = getAuth(app);
 } catch (e) {
-  console.warn("Firebase not initialized - check config or internet connection.", e);
+  console.warn("Firebase em modo de simulação.");
 }
 
-const LIFESTYLE_TAGS = [
-  { icon: <Wine size={14} />, label: 'Vinho & Conversa' },
-  { icon: <Music size={14} />, label: 'Festas Privadas' },
-  { icon: <Flame size={14} />, label: 'Fetiches' },
-  { icon: <Coffee size={14} />, label: 'Café & Chill' },
-  { icon: <Sparkles size={14} />, label: 'Experiências VIP' },
-  { icon: <Shield size={14} />, label: 'Respeito Total' }
-];
-
 const App: React.FC = () => {
-  // --- STATE ---
   const [currentPage, setCurrentPage] = useState<AppState>(AppState.LANDING);
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [rememberMe, setRememberMe] = useState(false);
   
-  // Swipe Logic
+  // Auth State
+  const [isSignupMode, setIsSignupMode] = useState(false);
+  const [loginUsername, setLoginUsername] = useState(''); // Usado no cadastro
+  const [loginPhone, setLoginPhone] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  
+  // Discovery State
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [swipeOffset, setSwipeOffset] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
-  const startX = useRef(0);
   const [photoIndex, setPhotoIndex] = useState(0);
-
-  // Discovery / Filters
+  const [likesList, setLikesList] = useState<Profile[]>(MOCK_PROFILES.slice(1, 3));
+  const [viewingLikeProfile, setViewingLikeProfile] = useState<Profile | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<Objective | 'Geral'>('Geral');
+  const [isTravelMode, setIsTravelMode] = useState(false);
+  const [travelCity, setTravelCity] = useState<string>('');
   const [chatHistory, setChatHistory] = useState<ChatSession[]>([]);
   const [activeChat, setActiveChat] = useState<ChatSession | null>(null);
   const [ndaModalOpen, setNdaModalOpen] = useState(false);
 
-  // Onboarding
-  const [onboardingStep, setOnboardingStep] = useState(1);
-  const [isGeneratingBio, setIsGeneratingBio] = useState(false);
-  const [tempProfile, setTempProfile] = useState<Partial<Profile>>({
-    photos: [],
-    objectives: [],
-    tags: [],
-    gender: undefined,
-    isPrivate: true,
-    bio: '',
-    location: { lat: -7.1195, lng: -34.8450, city: 'João Pessoa', state: 'Paraíba', type: 'GPS' }
-  });
-
-  // --- LÓGICA PWA ---
   useEffect(() => {
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    });
-  }, []);
+    const savedRemember = localStorage.getItem('velum_remember') === 'true';
+    const savedProfile = localStorage.getItem('velum_profile');
+    
+    setRememberMe(savedRemember);
 
-  const handleInstallClick = () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      deferredPrompt.userChoice.then((choiceResult: any) => {
-        if (choiceResult.outcome === 'accepted') {
-          console.log('User accepted the install prompt');
-        }
-        setDeferredPrompt(null);
-      });
-    }
-  };
-
-  // --- AI BIO GENERATION ---
-  const handleGenerateBio = async () => {
-    if (!tempProfile.name || !tempProfile.gender) {
-      alert("Por favor, preencha seu apelido e escolha sua essência (Gênero) antes de gerar a bio.");
-      return;
-    }
-
-    setIsGeneratingBio(true);
-    try {
-      // Use gemini-3-flash-preview for creative and fast text generation.
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const result = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Você é um redator de perfis exclusivos para uma sociedade noir secreta chamada VELUM.
-        Crie uma biografia sedutora, misteriosa, poética e muito curta (máximo 150 caracteres).
-        Dados do usuário:
-        Apelido: ${tempProfile.name}
-        Gênero: ${tempProfile.gender}
-        Desejos: ${tempProfile.objectives?.join(', ') || 'Exploração e mistério'}
-        Idioma: Português Brasileiro.
-        Tom: Elegante e noir.`,
-      });
-
-      if (result.text) {
-        setTempProfile(prev => ({ ...prev, bio: result.text.trim() }));
-      }
-    } catch (error) {
-      console.error("Erro ao gerar bio com IA:", error);
-    } finally {
-      setIsGeneratingBio(false);
-    }
-  };
-
-  // --- FIREBASE SYNC ---
-  useEffect(() => {
-    if (!auth) {
-      setIsLoading(false);
-      return;
-    }
-
-    const unsubscribe = onAuthStateChanged(auth, async (user: any) => {
+    if (savedRemember && savedProfile) {
       try {
-        if (user) {
-          const docRef = doc(db, 'artifacts', APP_ID, 'users', user.uid, 'profile', 'data');
-          const docSnap = await getDoc(docRef);
-          
-          if (docSnap.exists()) {
-            setCurrentUser(docSnap.data() as Profile);
-            setCurrentPage(AppState.DISCOVER);
-          } else {
-            setCurrentPage(AppState.SIGNUP);
-          }
-        }
+        const profile = JSON.parse(savedProfile);
+        setCurrentUser(profile);
+        setCurrentPage(AppState.DISCOVER);
       } catch (e) {
-        console.error("Firebase auth check failed:", e);
-      } finally {
-        setIsLoading(false);
+        console.error("Erro ao carregar sessão:", e);
       }
-    });
-
-    return () => unsubscribe();
+    }
+    
+    setIsLoading(false);
   }, []);
 
-  const saveProfileToFirebase = async (profileData: Profile) => {
-    if (!db || !auth?.currentUser) return;
-    try {
-      const docRef = doc(db, 'artifacts', APP_ID, 'users', auth.currentUser.uid, 'profile', 'data');
-      await setDoc(docRef, profileData);
-      
-      const publicRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'profiles', auth.currentUser.uid);
-      await setDoc(publicRef, profileData);
-    } catch (e) {
-      console.error("Error saving profile:", e);
+  const handleAuth = async () => {
+    if (isSignupMode) {
+      if (!loginUsername || !loginPhone || !loginPassword) {
+        alert("Por favor, preencha todos os campos para criar sua conta.");
+        return;
+      }
+    } else {
+      if (!loginPhone || !loginPassword) {
+        alert("Por favor, preencha Telefone e Senha.");
+        return;
+      }
+    }
+
+    // Simulação de autenticação/cadastro
+    const profile: Profile = {
+      ...MOCK_USER,
+      name: isSignupMode ? loginUsername : (loginUsername || 'Membro Noir'),
+      uid: generateId(),
+    };
+
+    setCurrentUser(profile);
+    
+    if (isSignupMode) {
+      setCurrentPage(AppState.SIGNUP); // Vai para o Pacto de Sigilo
+    } else {
+      setCurrentPage(AppState.DISCOVER);
+    }
+
+    if (rememberMe) {
+      localStorage.setItem('velum_remember', 'true');
+      localStorage.setItem('velum_profile', JSON.stringify(profile));
+    } else {
+      localStorage.removeItem('velum_remember');
+      localStorage.removeItem('velum_profile');
     }
   };
 
-  const loginWithGoogle = async () => {
-    if (!auth) {
-      // Offline/Mock mode if Firebase is down
-      setCurrentUser(MOCK_USER);
-      setCurrentPage(AppState.DISCOVER);
-      return;
-    }
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (e) {
-      console.error("Login failed:", e);
-      setCurrentUser(MOCK_USER);
-      setCurrentPage(AppState.DISCOVER);
-    }
+  const handleLogout = async () => {
+    setCurrentUser(null);
+    localStorage.removeItem('velum_remember');
+    localStorage.removeItem('velum_profile');
+    setCurrentPage(AppState.LANDING);
+    setIsSignupMode(false);
+    setLoginUsername('');
+    setLoginPhone('');
+    setLoginPassword('');
   };
 
-  // --- DERIVED STATE ---
   const filteredProfiles = useMemo(() => {
     let list = [...MOCK_PROFILES];
     if (selectedCategory !== 'Geral') {
       list = list.filter(p => p.objectives.includes(selectedCategory as Objective));
     }
+    if (isTravelMode && travelCity) {
+      list = list.filter(p => p.location.city === travelCity);
+    }
     return list;
-  }, [selectedCategory]);
+  }, [selectedCategory, isTravelMode, travelCity]);
 
-  // --- HANDLERS ---
-  const handleAction = (type: 'like' | 'dislike') => {
-    const profile = filteredProfiles[currentIndex];
+  const handleAction = (type: 'like' | 'dislike', profileOverride?: Profile) => {
+    const profile = profileOverride || filteredProfiles[currentIndex];
     if (!profile) return;
-
+    
     if (type === 'like') {
-      const newChat: ChatSession = {
-        id: `chat_${generateId()}`,
-        partner: profile,
-        messages: [{ id: generateId(), senderId: profile.uid, text: 'O VÉU caiu. Vamos nos conhecer?', timestamp: Date.now() }],
-        ndaAccepted: false
-      };
-      setChatHistory(prev => [newChat, ...prev]);
-      setActiveChat(newChat);
-      setNdaModalOpen(true);
+      const hasLikedUs = likesList.find(l => l.uid === profile.uid);
+      if (hasLikedUs) {
+        setLikesList(prev => prev.filter(l => l.uid !== profile.uid));
+        const newChat: ChatSession = {
+          id: generateId(),
+          partner: profile,
+          messages: [{ id: generateId(), senderId: profile.uid, text: 'O VÉU caiu. O que você deseja revelar hoje?', timestamp: Date.now() }],
+          ndaAccepted: false
+        };
+        setChatHistory(prev => [newChat, ...prev]);
+        setActiveChat(newChat);
+        setNdaModalOpen(true);
+        setCurrentPage(AppState.CHAT);
+      } else {
+        if (!profileOverride) setCurrentIndex(prev => prev + 1);
+      }
+    } else {
+      if (!profileOverride) setCurrentIndex(prev => prev + 1);
     }
     
-    setSwipeOffset(type === 'like' ? 400 : -400);
-    setTimeout(() => {
-      setCurrentIndex(prev => prev + 1);
-      setSwipeOffset(0);
-      setPhotoIndex(0);
-    }, 250);
+    if (!profileOverride) setPhotoIndex(0);
+    setViewingLikeProfile(null);
   };
 
-  // --- RENDER ---
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#070708] flex items-center justify-center">
-        <div className="w-10 h-10 border-2 border-indigo-500/20 border-t-indigo-600 rounded-full animate-spin" />
+      <div className="fixed inset-0 bg-[#070708] flex items-center justify-center z-[9999]">
+        <div className="flex flex-col items-center gap-6">
+          <div className="w-14 h-14 border-2 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
+          <h2 className="text-white font-serif italic text-xl animate-pulse tracking-widest">VELUM</h2>
+        </div>
       </div>
     );
   }
 
+  const BottomNav = () => (
+    <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-[#070708]/95 backdrop-blur-3xl border-t border-white/5 pt-4 pb-10 px-10 flex justify-between items-center z-[100] rounded-t-[3rem] shadow-[0_-20px_50px_rgba(0,0,0,0.8)]">
+      <button onClick={() => setCurrentPage(AppState.DISCOVER)} className={`p-2 transition-all duration-300 ${currentPage === AppState.DISCOVER ? 'text-indigo-500 scale-125' : 'text-gray-600 hover:text-gray-400'}`}>
+        <Heart size={28} fill={currentPage === AppState.DISCOVER ? 'currentColor' : 'none'} />
+      </button>
+      <button onClick={() => setCurrentPage(AppState.VAULT)} className={`p-2 transition-all duration-300 ${currentPage === AppState.VAULT ? 'text-indigo-500 scale-125' : 'text-gray-600 hover:text-gray-400'}`}>
+        <Key size={28} /> 
+      </button>
+      <button onClick={() => setCurrentPage(AppState.CHAT_LIST)} className={`p-2 transition-all duration-300 ${currentPage === AppState.CHAT_LIST || currentPage === AppState.CHAT ? 'text-indigo-500 scale-125' : 'text-gray-600 hover:text-gray-400'}`}>
+        <div className="relative">
+          <MessageCircle size={28} />
+          {(chatHistory.length > 0 || likesList.length > 0) && <div className="absolute -top-1 -right-1 w-3 h-3 bg-indigo-500 rounded-full border-2 border-[#070708]" />}
+        </div>
+      </button>
+      <button onClick={() => setCurrentPage(AppState.PROFILE)} className={`p-2 transition-all duration-300 ${currentPage === AppState.PROFILE ? 'text-indigo-500 scale-125' : 'text-gray-600 hover:text-gray-400'}`}>
+        <User size={28} />
+      </button>
+    </div>
+  );
+
   const renderLanding = () => (
-    <div className="min-h-screen relative flex flex-col justify-center items-center px-8 overflow-hidden animate-in fade-in duration-1000">
-      {/* Background Image - Nightclub mood */}
+    <div className="fixed inset-0 flex flex-col justify-center items-center px-8 bg-[#070708] overflow-hidden">
       <div className="absolute inset-0 z-0">
         <img 
-          src="https://images.unsplash.com/photo-1541532746401-cc0904000301?auto=format&fit=crop&q=80&w=2000" 
-          className="w-full h-full object-cover brightness-[0.25]"
-          alt="Night Background"
+          src="https://images.unsplash.com/photo-1566417713940-fe7c737a9ef2?auto=format&fit=crop&q=80&w=1200" 
+          className="w-full h-full object-cover brightness-[0.25] scale-110"
+          alt="Luxury Noir Lounge"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#070708] via-transparent to-[#070708]/80" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#070708] via-[#070708]/60 to-transparent" />
       </div>
-
-      <div className="relative z-10 flex flex-col items-center w-full max-w-sm">
-        {/* Shield Icon Circle */}
-        <div className="w-24 h-24 bg-black/80 rounded-full flex items-center justify-center mb-8 border border-indigo-500/30 shadow-[0_0_30px_rgba(79,70,229,0.3)]">
-          <Shield className="text-indigo-500" size={44} strokeWidth={1.2} />
+      
+      <div className="relative z-10 flex flex-col items-center w-full max-w-sm text-center animate-in fade-in zoom-in duration-700">
+        {/* Ícone removido para um visual mais moderno e limpo conforme solicitado */}
+        <div className="mb-10">
+          <h1 className="text-7xl font-serif italic text-white tracking-tighter mb-1 select-none drop-shadow-2xl">VELUM</h1>
+          <p className="text-gray-500 uppercase tracking-[0.6em] text-[10px] font-black opacity-80">NOIR SOCIETY</p>
+        </div>
+        
+        <div className="w-full space-y-4 px-2 mb-6">
+          {isSignupMode && (
+            <div className="relative animate-in slide-in-from-top-2 duration-300">
+              <User size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-500" />
+              <Input 
+                placeholder="Seu Nome ou Codinome" 
+                className="pl-14 h-16 rounded-2xl bg-black/40 backdrop-blur-md border-white/5" 
+                value={loginUsername}
+                onChange={(e) => setLoginUsername(e.target.value)}
+              />
+            </div>
+          )}
+          <div className="relative">
+            <Phone size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-500" />
+            <Input 
+              placeholder="Número de Telefone" 
+              type="tel"
+              className="pl-14 h-16 rounded-2xl bg-black/40 backdrop-blur-md border-white/5" 
+              value={loginPhone}
+              onChange={(e) => setLoginPhone(e.target.value)}
+            />
+          </div>
+          <div className="relative">
+            <Lock size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-500" />
+            <Input 
+              placeholder="Senha de Acesso" 
+              type={showPassword ? "text" : "password"}
+              className="pl-14 h-16 rounded-2xl bg-black/40 backdrop-blur-md border-white/5 pr-14" 
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+            />
+            <button 
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+            >
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
         </div>
 
-        {/* Text Logo */}
-        <h1 className="text-7xl font-serif italic text-white tracking-tighter mb-1 select-none">VELUM</h1>
-        <p className="text-gray-300 uppercase tracking-[0.6em] text-[10px] font-black mb-10 opacity-70">NOIR SOCIETY</p>
-        
-        {/* Phrase */}
-        <p className="text-indigo-100/60 font-serif italic text-center text-lg mb-16 leading-relaxed">
-          "Onde o sigilo é o nosso pacto e a liberdade o seu desejo."
-        </p>
+        <div className="w-full space-y-6 px-2">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setRememberMe(!rememberMe)}>
+              <div className={`w-4 h-4 rounded border transition-all flex items-center justify-center ${rememberMe ? 'bg-indigo-600 border-indigo-500' : 'border-white/20 bg-white/5'}`}>
+                {rememberMe && <Check size={12} className="text-white" />}
+              </div>
+              <span className="text-[10px] uppercase tracking-widest text-gray-500 group-hover:text-gray-300 font-bold transition-colors">Lembrar-me</span>
+            </div>
+            <button 
+              onClick={() => setIsSignupMode(!isSignupMode)}
+              className="text-[10px] uppercase tracking-widest text-indigo-400 hover:text-indigo-300 font-black transition-colors"
+            >
+              {isSignupMode ? "Já tenho conta" : "Criar nova conta"}
+            </button>
+          </div>
 
-        {/* Action Buttons - Exactly as reference */}
-        <div className="w-full space-y-4">
-          <Button variant="secondary" fullWidth onClick={loginWithGoogle}>
-            Começar Jornada
-          </Button>
-          <Button variant="outline" fullWidth onClick={() => setCurrentPage(AppState.SIGNUP)}>
-            Entrar no Sigilo
+          <Button variant="secondary" fullWidth onClick={handleAuth} className="h-16 text-lg font-serif italic shadow-[0_15px_30px_rgba(255,255,255,0.05)]">
+            {isSignupMode ? "Iniciar Jornada" : "Entrar no Pacto"}
           </Button>
           
-          {deferredPrompt && (
-            <button 
-              onClick={handleInstallClick}
-              className="w-full flex items-center justify-center gap-2 text-[10px] text-gray-500 uppercase tracking-widest font-bold py-2 hover:text-white transition-colors"
-            >
-              <Download size={14} /> Adicionar à tela inicial
-            </button>
-          )}
+          <p className="text-[9px] text-gray-600 uppercase tracking-widest font-black opacity-60 mt-4">Sessão protegida por criptografia de ponta</p>
         </div>
-      </div>
-
-      <div className="absolute bottom-10 left-0 right-0 z-10 text-center px-8 opacity-20">
-        <p className="text-[9px] text-gray-500 uppercase tracking-[0.4em] font-medium">
-          PRIVACIDADE • CONSENTIMENTO • LIBERDADE
-        </p>
       </div>
     </div>
   );
 
-  const renderOnboarding = () => {
-    const steps = [
-      { id: 1, title: 'Identidade', desc: 'Quem é você?' },
-      { id: 2, title: 'Essência', desc: 'Identidade Sexual' },
-      { id: 3, title: 'Desejos', desc: 'O que busca?' },
-      { id: 4, title: 'Visual', desc: 'Sua Galeria' },
-      { id: 5, title: 'Privacidade', desc: 'O VÉU' }
-    ];
-    const step = steps.find(s => s.id === onboardingStep);
-
-    return (
-      <div className="min-h-screen bg-[#070708] flex flex-col p-8 pb-12 max-w-md mx-auto animate-in slide-in-from-right duration-500">
-        <div className="flex items-center gap-4 mb-12">
-          <button onClick={() => onboardingStep > 1 ? setOnboardingStep(s => s - 1) : setCurrentPage(AppState.LANDING)} className="w-10 h-10 flex items-center justify-center bg-white/5 border border-white/10 rounded-xl text-white">
-            <ChevronLeft size={20} />
-          </button>
-          <div className="flex gap-1.5 flex-1 h-1">
-            {steps.map(s => (
-              <div key={s.id} className={`flex-1 rounded-full transition-all duration-700 ${s.id <= onboardingStep ? 'bg-indigo-600' : 'bg-white/5'}`} />
-            ))}
+  const renderDiscovery = () => (
+    <div className="fixed inset-0 flex flex-col bg-[#070708] max-w-md mx-auto overflow-hidden animate-in fade-in h-full">
+      <div className="shrink-0">
+        <div className="flex items-center justify-between px-6 pt-10 pb-4">
+          <div className="flex flex-col">
+            <h1 className="font-serif italic text-3xl tracking-tight text-white select-none">VELUM</h1>
+            <div className="flex items-center gap-1.5 opacity-60">
+              <MapPin size={10} className="text-indigo-400" />
+              <span className="text-[9px] font-black uppercase tracking-widest text-indigo-100">
+                {currentUser?.location.city || 'Próximo a você'}
+              </span>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setIsTravelMode(!isTravelMode)} className={`w-12 h-12 flex items-center justify-center border rounded-2xl transition-all ${isTravelMode ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-600/30' : 'bg-white/5 border-white/10 text-gray-500 hover:text-white'}`}>
+              <Globe size={20} />
+            </button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto no-scrollbar">
-          <h2 className="text-[10px] uppercase tracking-[0.3em] text-indigo-500 font-black mb-2">{step?.title}</h2>
-          <h3 className="text-4xl font-serif italic text-white mb-10">{step?.desc}</h3>
-
-          {onboardingStep === 1 && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-              <Input placeholder="Seu apelido" value={tempProfile.name || ''} onChange={e => setTempProfile({...tempProfile, name: e.target.value})} />
-              <Input type="number" placeholder="Idade" value={tempProfile.age || ''} onChange={e => setTempProfile({...tempProfile, age: parseInt(e.target.value)})} />
-              <div className="relative group">
-                <textarea 
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl p-6 text-sm text-white focus:outline-none h-32 pr-12 transition-all focus:bg-white/[0.08]" 
-                  placeholder="Sua bio noir..." 
-                  value={tempProfile.bio || ''} 
-                  onChange={e => setTempProfile({...tempProfile, bio: e.target.value})} 
-                />
-                <button 
-                  onClick={handleGenerateBio}
-                  disabled={isGeneratingBio}
-                  className="absolute right-4 bottom-4 w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg hover:scale-105 transition-all disabled:opacity-50 disabled:scale-100"
-                  title="Gerar bio com IA"
-                >
-                  <Sparkles size={18} className={isGeneratingBio ? 'animate-pulse' : ''} />
-                </button>
-              </div>
-              <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest text-center opacity-60">
-                Toque na estrela para deixar que a IA trace seu perfil noir.
-              </p>
-            </div>
-          )}
-
-          {onboardingStep === 2 && (
-            <div className="grid grid-cols-1 gap-2 animate-in fade-in">
-              {Object.values(Gender).map(g => (
-                <button key={g} onClick={() => setTempProfile({...tempProfile, gender: g})} className={`px-6 py-4 rounded-2xl border text-sm font-bold transition-all ${tempProfile.gender === g ? 'bg-indigo-600 border-indigo-500 text-white shadow-xl' : 'bg-white/5 border-white/10 text-gray-500'}`}>{g}</button>
-              ))}
-            </div>
-          )}
-
-          {onboardingStep === 3 && (
-            <div className="grid grid-cols-1 gap-2 animate-in fade-in">
-              {Object.values(Objective).map(obj => {
-                const isSelected = tempProfile.objectives?.includes(obj);
-                return (
-                  <button 
-                    key={obj} 
-                    onClick={() => {
-                      const cur = tempProfile.objectives || [];
-                      setTempProfile({...tempProfile, objectives: isSelected ? cur.filter(o => o !== obj) : [...cur, obj]});
-                    }}
-                    className={`px-6 py-4 rounded-2xl border text-sm font-bold transition-all ${isSelected ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-white/5 border-white/10 text-gray-500'}`}
-                  >{obj}</button>
-                );
-              })}
-            </div>
-          )}
-
-          {onboardingStep === 4 && (
-            <div className="grid grid-cols-3 gap-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <button key={i} onClick={() => {
-                  const cur = tempProfile.photos || [];
-                  setTempProfile({...tempProfile, photos: [...cur, `https://picsum.photos/seed/${generateId()}/600/800`]});
-                }} className="aspect-[3/4] bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center overflow-hidden">
-                  {tempProfile.photos?.[i] ? <img src={tempProfile.photos[i]} className="w-full h-full object-cover" /> : <Plus className="text-gray-700" />}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {onboardingStep === 5 && (
-            <div className="space-y-10 animate-in fade-in">
-              <div className="relative aspect-[3/4] rounded-[3rem] overflow-hidden border border-white/10">
-                <img src={tempProfile.photos?.[0] || 'https://picsum.photos/seed/p/600/800'} className={`w-full h-full object-cover ${tempProfile.isPrivate ? 'blur-3xl grayscale' : ''}`} />
-                <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                  <div className="text-center p-6 bg-black/40 rounded-3xl border border-white/10">
-                    {tempProfile.isPrivate ? <Ghost size={40} className="mx-auto mb-4 text-indigo-400" /> : <Eye size={40} className="mx-auto mb-4 text-indigo-400" />}
-                    <h4 className="text-white font-serif italic text-xl">{tempProfile.isPrivate ? 'Modo Sigilo' : 'Modo Nítido'}</h4>
-                  </div>
-                </div>
-              </div>
-              <div className="flex gap-4">
-                <Button variant={tempProfile.isPrivate ? 'primary' : 'outline'} fullWidth onClick={() => setTempProfile({...tempProfile, isPrivate: true})}>Sigilo</Button>
-                <Button variant={!tempProfile.isPrivate ? 'primary' : 'outline'} fullWidth onClick={() => setTempProfile({...tempProfile, isPrivate: false})}>Nítido</Button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="mt-8">
-          <Button fullWidth onClick={() => {
-            if (onboardingStep < 5) setOnboardingStep(s => s + 1);
-            else {
-              const profile = {...MOCK_USER, ...tempProfile, uid: auth?.currentUser?.uid || 'me'} as Profile;
-              setCurrentUser(profile);
-              saveProfileToFirebase(profile);
-              setCurrentPage(AppState.DISCOVER);
-            }
-          }}>
-            {onboardingStep === 5 ? 'Iniciar Jornada' : 'Próximo'}
-            <ArrowRight size={18} />
-          </Button>
+        <div className="px-6 mb-4 overflow-x-auto no-scrollbar flex gap-2">
+          {['Geral', ...Object.values(Objective)].map(cat => (
+            <button 
+              key={cat} 
+              onClick={() => { setSelectedCategory(cat as Objective | 'Geral'); setCurrentIndex(0); }} 
+              className={`px-5 py-2.5 rounded-full text-[9px] font-black uppercase tracking-[0.2em] whitespace-nowrap transition-all border shrink-0 ${selectedCategory === cat ? 'bg-indigo-600 border-indigo-500 text-white shadow-xl shadow-indigo-600/20' : 'bg-white/5 border-white/10 text-gray-400'}`}
+            >
+              {cat}
+            </button>
+          ))}
         </div>
       </div>
-    );
-  };
 
-  const BottomNav = () => (
-    <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-[#070708]/95 backdrop-blur-3xl border-t border-white/5 py-4 px-10 flex justify-between items-center z-50 rounded-t-[2.5rem] shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
-      <button onClick={() => setCurrentPage(AppState.DISCOVER)} className={`p-3 transition-all ${currentPage === AppState.DISCOVER ? 'text-indigo-500 scale-110' : 'text-gray-600'}`}>
-        <Heart size={24} fill={currentPage === AppState.DISCOVER ? 'currentColor' : 'none'} />
-      </button>
-      <button onClick={() => setCurrentPage(AppState.VAULT)} className={`p-3 transition-all ${currentPage === AppState.VAULT ? 'text-indigo-500 scale-110' : 'text-gray-600'}`}>
-        <Key size={24} />
-      </button>
-      <button onClick={() => setCurrentPage(AppState.CHAT_LIST)} className={`p-3 transition-all ${currentPage === AppState.CHAT_LIST || currentPage === AppState.CHAT ? 'text-indigo-500 scale-110' : 'text-gray-600'}`}>
-        <MessageCircle size={24} />
-      </button>
-      <button onClick={() => setCurrentPage(AppState.PROFILE)} className={`p-3 transition-all ${currentPage === AppState.PROFILE ? 'text-indigo-500 scale-110' : 'text-gray-600'}`}>
-        <User size={24} />
-      </button>
+      <div className="flex-1 px-4 mb-32 relative flex flex-col overflow-hidden">
+        {filteredProfiles.length > currentIndex ? (
+          <div className="w-full h-full relative flex flex-col animate-in zoom-in duration-500">
+            <div className="flex-1 w-full relative rounded-[2.5rem] overflow-hidden shadow-[0_40px_80px_-20px_rgba(0,0,0,1)] border border-white/5 bg-[#0d0d0f]">
+              <img 
+                src={filteredProfiles[currentIndex].photos[photoIndex]} 
+                className={`w-full h-full object-cover transition-all duration-700 ${filteredProfiles[currentIndex].isPrivate ? 'blur-[70px] grayscale brightness-[0.4] scale-110' : ''}`} 
+                alt="Profile Noir"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-transparent to-black/20" />
+              <div className="absolute top-5 left-8 right-8 flex gap-1.5 z-20">
+                {filteredProfiles[currentIndex].photos.map((_, i) => (
+                  <div key={i} className={`h-1 flex-1 rounded-full transition-all duration-300 ${i === photoIndex ? 'bg-white shadow-[0_0_10px_white]' : 'bg-white/15'}`} />
+                ))}
+              </div>
+              <div className="absolute inset-0 flex z-10">
+                <div className="flex-1" onClick={() => setPhotoIndex(Math.max(0, photoIndex - 1))} />
+                <div className="flex-1" onClick={() => setPhotoIndex(Math.min(filteredProfiles[currentIndex].photos.length - 1, photoIndex + 1))} />
+              </div>
+              <div className="absolute bottom-10 left-8 right-8 pointer-events-none z-20">
+                <div className="flex items-center gap-3 mb-2">
+                  <h3 className="text-4xl font-serif italic text-white drop-shadow-2xl">{filteredProfiles[currentIndex].name}, {filteredProfiles[currentIndex].age}</h3>
+                  <div className="w-2.5 h-2.5 bg-green-500 rounded-full shadow-[0_0_15px_rgba(34,197,94,0.6)]" />
+                </div>
+                <div className="flex flex-wrap gap-2 mt-4">
+                  {filteredProfiles[currentIndex].objectives.map(o => (
+                    <span key={o} className="px-4 py-1.5 bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 text-[9px] font-black uppercase tracking-widest rounded-full backdrop-blur-md">
+                      {o}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-center items-center gap-10 mt-6 shrink-0 pb-2">
+              <button onClick={() => handleAction('dislike')} className="w-16 h-16 bg-[#0d0d0f] border border-white/10 rounded-full flex items-center justify-center text-red-500 active:scale-90 shadow-2xl transition-all hover:bg-red-500/5">
+                <X size={32}/>
+              </button>
+              <button onClick={() => handleAction('like')} className="w-20 h-20 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-[0_20px_40px_rgba(79,70,229,0.5)] active:scale-90 transition-all hover:bg-indigo-500 shadow-xl">
+                <Heart size={36} fill="white"/>
+              </button>
+              <button className="w-16 h-16 bg-[#0d0d0f] border border-white/10 rounded-full flex items-center justify-center text-indigo-400 active:scale-90 shadow-2xl transition-all hover:bg-indigo-500/5">
+                <Zap size={28}/>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center opacity-40 italic font-serif text-center px-10 h-full">
+            <Ghost size={80} className="mb-8 text-indigo-500/40" />
+            <h3 className="text-3xl text-white mb-2">Sua Frequência Terminou</h3>
+            <p className="text-[10px] uppercase tracking-[0.4em] font-black text-gray-600 leading-relaxed mb-12">
+              O VÉU cobriu todos os segredos por agora.
+            </p>
+            <Button variant="outline" className="h-16 px-12" onClick={() => { setCurrentIndex(0); setIsTravelMode(false); setSelectedCategory('Geral'); }}>
+              Revelar Novamente
+            </Button>
+          </div>
+        )}
+      </div>
+      <BottomNav />
     </div>
   );
 
   return (
-    <div className="max-w-md mx-auto bg-[#070708] text-white min-h-screen relative font-sans overflow-x-hidden selection:bg-indigo-500/30">
+    <div className="max-w-md mx-auto bg-[#070708] text-white min-h-screen relative font-sans overflow-hidden selection:bg-indigo-500/30">
       {currentPage === AppState.LANDING && renderLanding()}
-      {currentPage === AppState.SIGNUP && renderOnboarding()}
+      {currentPage === AppState.DISCOVER && renderDiscovery()}
       
-      {/* Discovery Page */}
-      {currentPage === AppState.DISCOVER && (
-        <div className="pb-32 animate-in fade-in">
-          <Header title="VELUM" rightElement={<button className="w-12 h-12 flex items-center justify-center bg-white/5 border border-white/10 rounded-2xl text-indigo-500"><Lock size={20} /></button>} />
-          <div className="px-8 space-y-8">
-            {filteredProfiles.length > currentIndex ? (
-              <Card className="aspect-[3/4] relative">
-                <img src={filteredProfiles[currentIndex].photos[0]} className={`w-full h-full object-cover ${filteredProfiles[currentIndex].isPrivate ? 'blur-3xl grayscale' : ''}`} />
-                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent" />
-                <div className="absolute bottom-8 left-8 right-8">
-                  <h3 className="text-3xl font-serif italic mb-1">{filteredProfiles[currentIndex].name}, {filteredProfiles[currentIndex].age}</h3>
-                  <p className="text-xs text-indigo-400 font-bold uppercase tracking-widest">{filteredProfiles[currentIndex].objectives.join(' • ')}</p>
+      {currentPage === AppState.SIGNUP && (
+        <div className="fixed inset-0 bg-[#070708] flex flex-col p-10 z-[200] animate-in slide-in-from-bottom duration-500">
+          <Header title="Cadastro" onBack={() => setCurrentPage(AppState.LANDING)} />
+          <div className="flex-1 flex flex-col items-center justify-center text-center space-y-12 px-4">
+             <div className="w-24 h-24 bg-indigo-600/10 rounded-full flex items-center justify-center border border-indigo-500/20 shadow-inner">
+                <Shield size={64} className="text-indigo-500 animate-pulse" />
+             </div>
+             <div className="space-y-4">
+               <h3 className="text-4xl font-serif italic text-white">Bem-vindo, {currentUser?.name}</h3>
+               <p className="text-gray-400 text-sm leading-relaxed italic font-serif">
+                 "Ao entrar na VELUM Noir Society, você jura silêncio absoluto sobre o que é visto e sussurrado aqui."
+               </p>
+             </div>
+             <Button fullWidth onClick={() => { setCurrentPage(AppState.DISCOVER); }}>
+               Aceitar Pacto e Entrar
+             </Button>
+          </div>
+        </div>
+      )}
+
+      {currentPage === AppState.CHAT_LIST && (
+        <div className="fixed inset-0 bg-[#070708] z-[100] flex flex-col animate-in slide-in-from-bottom duration-300">
+          <Header title="Sussurros" onBack={() => setCurrentPage(AppState.DISCOVER)} />
+          <div className="flex-1 overflow-y-auto px-8 pb-40 no-scrollbar space-y-10 pt-4">
+            {likesList.length > 0 && (
+              <div className="space-y-6">
+                <h3 className="text-[10px] uppercase tracking-[0.4em] font-black text-indigo-500">Desejos Revelados</h3>
+                <div className="flex gap-4 overflow-x-auto no-scrollbar">
+                   {likesList.map(p => (
+                     <div key={p.uid} className="relative shrink-0 cursor-pointer" onClick={() => setViewingLikeProfile(p)}>
+                        <div className="w-20 h-20 rounded-[2.2rem] border-2 border-indigo-500/20 overflow-hidden p-1 bg-[#0d0d0f] hover:border-indigo-500 transition-all">
+                           <img src={p.photos[0]} className="w-full h-full object-cover rounded-[1.8rem] blur-2xl grayscale brightness-50" />
+                        </div>
+                        <div className="absolute -bottom-1 -right-1 bg-indigo-600 rounded-full p-1.5 border-4 border-[#070708]"><Heart size={10} fill="white" /></div>
+                     </div>
+                   ))}
                 </div>
-              </Card>
-            ) : (
-              <div className="text-center py-20 opacity-30 italic font-serif">Sem novos segredos...</div>
+              </div>
             )}
-            <div className="flex justify-center gap-6">
-              <button onClick={() => setCurrentIndex(c => c + 1)} className="w-16 h-16 bg-white/5 border border-white/10 rounded-full flex items-center justify-center text-red-500"><X size={32}/></button>
-              <button onClick={() => handleAction('like')} className="w-20 h-20 bg-indigo-600 rounded-[2.5rem] flex items-center justify-center text-white shadow-2xl shadow-indigo-600/30"><Heart size={36} fill="white"/></button>
+            <div className="space-y-6">
+              <h3 className="text-[10px] uppercase tracking-[0.4em] font-black text-gray-600">Conexões Ativas</h3>
+              {chatHistory.length > 0 ? chatHistory.map(chat => (
+                <div key={chat.id} onClick={() => { setActiveChat(chat); setCurrentPage(AppState.CHAT); }} className="p-6 bg-[#0d0d0f] rounded-[2.5rem] border border-white/5 flex items-center gap-5 active:scale-95 transition-all shadow-xl">
+                  <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-indigo-500/10 shadow-xl">
+                    <img src={chat.partner.photos[0]} className="w-full h-full object-cover blur-sm" alt="Parceiro" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-xl font-serif italic text-white mb-0.5">{chat.partner.name}</h4>
+                    <p className="text-xs text-gray-500 italic truncate w-40">Continuar sussurros...</p>
+                  </div>
+                </div>
+              )) : (
+                <div className="text-center py-24 opacity-20 italic font-serif text-2xl flex flex-col items-center gap-6">
+                  <MessageCircle size={56} className="text-gray-700" />
+                  Aguardando um sussurro...
+                </div>
+              )}
             </div>
           </div>
           <BottomNav />
         </div>
       )}
 
-      {/* Profile Page */}
       {currentPage === AppState.PROFILE && (
-        <div className="pb-32 animate-in fade-in">
-          <Header title="Perfil" />
-          <div className="px-10 space-y-10">
-            <div className="w-full aspect-square rounded-[3rem] overflow-hidden border-2 border-indigo-500/20">
-              <img src={currentUser?.photos[0] || MOCK_USER.photos[0]} className="w-full h-full object-cover" />
-            </div>
-            <div className="space-y-2">
-              <h2 className="text-4xl font-serif italic">{currentUser?.name || 'Noir User'}</h2>
-              <p className="text-gray-500 leading-relaxed italic">"{currentUser?.bio || 'Vivendo sem amarras.'}"</p>
-            </div>
-            <Button variant="outline" fullWidth onClick={() => { auth?.signOut(); setCurrentUser(null); setCurrentPage(AppState.LANDING); }}>Desconectar</Button>
+        <div className="fixed inset-0 bg-[#070708] z-[100] flex flex-col animate-in slide-in-from-bottom-10 duration-500">
+          <Header title="Identidade" onBack={() => setCurrentPage(AppState.DISCOVER)} />
+          <div className="flex-1 overflow-y-auto px-10 pb-48 no-scrollbar space-y-12 pt-4">
+             <div className="w-full aspect-square rounded-[4rem] overflow-hidden border-4 border-[#0d0d0f] relative shadow-[0_40px_80px_rgba(0,0,0,0.85)]">
+                <img src={currentUser?.photos[0] || MOCK_USER.photos[0]} className="w-full h-full object-cover" alt="Sua Foto" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/95" />
+                <div className="absolute bottom-8 left-8">
+                  <h2 className="text-4xl font-serif italic text-white mb-2">{currentUser?.name || 'Membro Noir'}</h2>
+                  <Badge active>{currentUser?.gender || 'Essência Oculta'}</Badge>
+                </div>
+             </div>
+             <Button variant="outline" fullWidth onClick={handleLogout} className="h-16 text-red-500 border-red-500/20 hover:bg-red-500/5 rounded-3xl">
+                <LogOut size={20} className="mr-3" /> Encerrar Jornada
+             </Button>
           </div>
           <BottomNav />
         </div>
       )}
 
-      {/* NDA Modal */}
       {ndaModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-8 animate-in fade-in">
-          <div className="absolute inset-0 bg-black/95 backdrop-blur-2xl" />
-          <Card className="relative p-10 text-center border-indigo-500/20 bg-black/40">
-            <Shield className="mx-auto text-indigo-500 mb-6" size={48} />
-            <h2 className="text-3xl font-serif italic mb-6">Pacto de Honra</h2>
-            <p className="text-sm text-gray-400 leading-relaxed mb-10 italic">"No VELUM, as máscaras caem, mas os segredos permanecem. Juramos sigilo total sobre o que for visto e dito."</p>
-            <Button fullWidth onClick={() => setNdaModalOpen(false)}>Eu Juro</Button>
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-8 animate-in fade-in duration-700">
+          <div className="absolute inset-0 bg-black/98 backdrop-blur-3xl" />
+          <Card className="relative p-12 text-center border-indigo-500/20 bg-[#0d0d0f]/80 max-w-sm rounded-[4rem] shadow-[0_0_100px_rgba(79,70,229,0.2)]">
+            <div className="w-24 h-24 bg-indigo-600/10 rounded-full flex items-center justify-center mx-auto mb-10 border border-indigo-500/20 shadow-inner">
+               <Shield className="text-indigo-500" size={56} />
+            </div>
+            <h2 className="text-4xl font-serif italic mb-6 text-white tracking-tight">Pacto de Honra</h2>
+            <p className="text-sm text-gray-400 italic mb-14 leading-relaxed font-serif">
+              "O VÉU caiu. O que for sussurrado ou mostrado nesta frequência é sagrado e morre aqui."
+            </p>
+            <Button fullWidth onClick={() => setNdaModalOpen(false)} className="h-20 text-xl font-serif italic">Eu Juro pelo Sigilo</Button>
           </Card>
         </div>
       )}

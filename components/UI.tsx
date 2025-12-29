@@ -24,6 +24,7 @@ export const Button: React.FC<ButtonProps> = ({
   };
 
   return (
+    // Fixed: Added curly braces around ...props to correctly spread them on the button element
     <button 
       className={`${baseStyles} ${variants[variant]} ${fullWidth ? 'w-full' : ''} ${className}`}
       {...props}
