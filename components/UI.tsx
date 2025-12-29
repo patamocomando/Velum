@@ -14,17 +14,16 @@ export const Button: React.FC<ButtonProps> = ({
   className = '', 
   ...props 
 }) => {
-  const baseStyles = 'px-8 py-5 rounded-full font-bold transition-all active:scale-95 flex items-center justify-center gap-2 text-base tracking-tight duration-300';
+  const baseStyles = 'px-8 py-4 rounded-2xl font-serif italic font-medium transition-all active:scale-[0.98] flex items-center justify-center gap-2 text-lg tracking-tight duration-500 select-none';
   const variants = {
-    primary: 'bg-indigo-600 text-white shadow-[0_10px_20px_-5px_rgba(79,70,229,0.4)] hover:bg-indigo-700',
-    secondary: 'bg-white text-black hover:bg-gray-100 shadow-2xl scale-100 hover:scale-[1.02]',
-    outline: 'border border-white/20 text-white hover:bg-white/10 backdrop-blur-md bg-black/40',
-    ghost: 'text-gray-500 hover:text-white',
-    danger: 'bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white'
+    primary: 'bg-indigo-600 text-white shadow-[0_15px_30px_-10px_rgba(79,70,229,0.5)] hover:bg-indigo-500 border border-indigo-400/20',
+    secondary: 'bg-white text-black hover:bg-gray-100 shadow-[0_20px_40px_-15px_rgba(255,255,255,0.1)] border border-white',
+    outline: 'border border-white/10 text-white hover:bg-white/5 backdrop-blur-xl bg-white/5',
+    ghost: 'text-gray-400 hover:text-white hover:bg-white/5',
+    danger: 'bg-red-500/5 text-red-500 border border-red-500/20 hover:bg-red-500/10'
   };
 
   return (
-    // Fixed: Added curly braces around ...props to correctly spread them on the button element
     <button 
       className={`${baseStyles} ${variants[variant]} ${fullWidth ? 'w-full' : ''} ${className}`}
       {...props}
@@ -36,7 +35,7 @@ export const Button: React.FC<ButtonProps> = ({
 
 export const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = ({ className = '', ...props }) => (
   <input 
-    className={`w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 focus:border-indigo-600/50 focus:bg-white/[0.08] focus:outline-none transition-all text-white placeholder-gray-600 text-sm ${className}`}
+    className={`w-full bg-white/[0.03] border border-white/10 rounded-2xl px-6 py-5 focus:border-indigo-500/50 focus:bg-white/[0.06] focus:outline-none transition-all text-white placeholder-gray-600 text-sm font-light tracking-wide ${className}`}
     {...props}
   />
 );
@@ -44,27 +43,27 @@ export const Input: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = ({ c
 export const Card: React.FC<{ children: React.ReactNode; className?: string; style?: React.CSSProperties }> = ({ children, className = '', style }) => (
   <div 
     style={style}
-    className={`bg-[#0d0d0f] border border-white/10 rounded-[3rem] overflow-hidden shadow-2xl ${className}`}
+    className={`bg-[#0d0d0f]/80 backdrop-blur-3xl border border-white/5 rounded-[2.5rem] overflow-hidden shadow-[0_40px_80px_-20px_rgba(0,0,0,0.8)] ${className}`}
   >
     {children}
   </div>
 );
 
 export const Badge: React.FC<{ children: React.ReactNode; active?: boolean }> = ({ children, active }) => (
-  <span className={`px-4 py-2 rounded-full text-[10px] uppercase tracking-[0.15em] font-black transition-all border ${active ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-white/5 border-white/10 text-gray-500'}`}>
+  <span className={`px-4 py-1.5 rounded-full text-[9px] uppercase tracking-[0.2em] font-black transition-all border ${active ? 'bg-indigo-600/20 border-indigo-500/40 text-indigo-200' : 'bg-white/5 border-white/5 text-gray-500'}`}>
     {children}
   </span>
 );
 
 export const Header: React.FC<{ title: string; onBack?: () => void; rightElement?: React.ReactNode }> = ({ title, onBack, rightElement }) => (
-  <div className="flex items-center justify-between px-8 py-10">
+  <div className="flex items-center justify-between px-6 pt-12 pb-6 sticky top-0 bg-[#070708]/80 backdrop-blur-lg z-50">
     <div className="flex items-center gap-4">
       {onBack && (
-        <button onClick={onBack} className="w-12 h-12 flex items-center justify-center bg-white/5 border border-white/10 rounded-2xl text-white hover:bg-white/10 transition-all">
-          <ChevronLeft size={20} />
+        <button onClick={onBack} className="w-11 h-11 flex items-center justify-center bg-white/[0.03] border border-white/10 rounded-xl text-white hover:bg-white/10 transition-all active:scale-90">
+          <ChevronLeft size={18} />
         </button>
       )}
-      <h1 className="font-serif italic text-3xl tracking-tight text-white">{title}</h1>
+      <h1 className="font-serif italic text-2xl tracking-tight text-white">{title}</h1>
     </div>
     {rightElement && <div className="flex items-center gap-3">{rightElement}</div>}
   </div>
