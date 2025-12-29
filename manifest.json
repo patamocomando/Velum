@@ -4,22 +4,19 @@
   "short_name": "VELUM",
   "start_url": "/",
   "display": "standalone",
-  "orientation": "portrait",
   "background_color": "#070708",
   "theme_color": "#070708",
-  "description": "Premium relationship app for private and liberal connections.",
+  "description": "Premium lifestyle relationship app.",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/3534/3534139.png",
+      "src": "https://api.dicebear.com/7.x/initials/png?seed=Velum&backgroundColor=4f46e5&width=192&height=192",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/3534/3534139.png",
+      "src": "https://api.dicebear.com/7.x/initials/png?seed=Velum&backgroundColor=4f46e5&width=512&height=512",
       "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "type": "image/png"
     }
-  ],
-  "categories": ["social", "lifestyle"]
+  ]
 }
