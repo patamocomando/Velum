@@ -10,6 +10,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="VELUM">
     <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#070708">
     
     <link rel="manifest" href="/manifest.json">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3534/3534139.png">
@@ -28,9 +29,9 @@
         padding: 0;
         overflow-x: hidden;
         -webkit-tap-highlight-color: transparent;
-        /* Safe area spacing for mobile notches */
         padding-top: env(safe-area-inset-top);
         padding-bottom: env(safe-area-inset-bottom);
+        user-select: none;
       }
       .font-serif {
         font-family: 'Playfair Display', serif;
@@ -41,6 +42,19 @@
       }
       #root {
         min-height: 100vh;
+      }
+      /* Previne o scroll elástico no iOS para manter o feeling de app */
+      html, body {
+        position: fixed;
+        overflow: hidden;
+        width: 100%;
+        height: 100%;
+      }
+      #root {
+        position: absolute;
+        top: 0; bottom: 0; left: 0; right: 0;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
       }
     </style>
     <script type="importmap">
