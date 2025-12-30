@@ -69,12 +69,12 @@ export interface Profile {
   dressStyle?: string;
   drink?: string;
   cuisine?: string;
-  environment?: string;
+  environment?: string | string[];
   smoking?: string;
   experienceLevel?: string;
   opennessScale?: number;
   kinks?: string;
-  music?: string;
+  music?: string | string[];
   subjects?: string;
   introExtroScale?: number;
   hardLimits?: string;

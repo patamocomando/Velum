@@ -33,9 +33,9 @@ const App: React.FC = () => {
     seeking: [],
     objectives: [],
     bio: '',
-    age: undefined, // Start empty as requested
-    music: [] as any, // Changed to array for multi-select
-    environment: [] as any, // Changed to array for multi-select
+    age: undefined,
+    music: [],
+    environment: [],
     interests: [],
     location: { lat: -7.1195, lng: -34.8450, city: 'João Pessoa', type: 'GPS' }
   });
@@ -136,6 +136,8 @@ const App: React.FC = () => {
 
     let passwordToStore = (window as any)._tempPass;
     const allAccountsBefore = JSON.parse(localStorage.getItem('velum_accounts') || '{}');
+    
+    // Preserve password if it exists
     if (isEdit && allAccountsBefore[finalProfile.uid]) {
       passwordToStore = allAccountsBefore[finalProfile.uid].password;
     }
@@ -207,6 +209,11 @@ const App: React.FC = () => {
         ...prev,
         location: { ...prev.location!, city, type: 'MANUAL' }
       }));
+    } else if (currentPage === AppState.EDIT_PROFILE) {
+      setCurrentUser(prev => prev ? ({
+        ...prev,
+        location: { ...prev.location, city, type: 'MANUAL' }
+      }) : null);
     } else {
       if (!currentUser) return;
       const newLocation = { ...currentUser.location, city, type: 'MANUAL' as const };
@@ -219,7 +226,6 @@ const App: React.FC = () => {
 
   const requestGPS = () => {
     if ("geolocation" in navigator) {
-      // Prompt logic is implicit in the native call
       navigator.geolocation.getCurrentPosition((pos) => {
         const newLoc = { 
           lat: pos.coords.latitude, 
@@ -230,7 +236,10 @@ const App: React.FC = () => {
         
         if (currentPage === AppState.ONBOARDING) {
           setFormProfile(prev => ({ ...prev, location: newLoc }));
-          alert("GPS Autorizado e detectado.");
+          alert("GPS Autorizado.");
+        } else if (currentPage === AppState.EDIT_PROFILE) {
+          setCurrentUser(prev => prev ? ({ ...prev, location: newLoc }) : null);
+          alert("GPS Atualizado.");
         } else if (currentUser) {
           const updated = { ...currentUser, location: newLoc };
           handleSaveProfile(true, updated);
@@ -238,18 +247,17 @@ const App: React.FC = () => {
           setCurrentIndex(0);
         }
       }, (err) => {
-        alert("Permissão de GPS negada. Ative nas configurações do seu aparelho para continuar.");
+        alert("Permissão de GPS negada.");
       });
     } else {
-      alert("Seu aparelho não suporta Geolocalização.");
+      alert("Aparelho sem Geolocalização.");
     }
   };
 
   const handlePhotoRequest = (isEdit: boolean, isVault: boolean = false) => {
-    // Reassurance message for privacy
     const confirmMsg = isVault 
-      ? "O VELUM solicita acesso à sua galeria para salvar fotos exclusivas no Vault Seguro. Suas fotos são criptografadas."
-      : "O VELUM solicita acesso à sua galeria para atualizar seu perfil público.";
+      ? "Acessar galeria para Vault Seguro?"
+      : "Acessar galeria para perfil público?";
       
     if (confirm(confirmMsg)) {
       if (isVault) vaultFileInputRef.current?.click();
@@ -265,7 +273,7 @@ const App: React.FC = () => {
     if (!target) return;
 
     if ((target.photos?.length || 0) >= 3) { 
-      alert("Máximo de 3 fotos públicas atingido."); 
+      alert("Máximo de 3 fotos."); 
       return; 
     }
 
@@ -286,7 +294,7 @@ const App: React.FC = () => {
     if (!files || files.length === 0 || !currentUser) return;
 
     if ((currentUser.vaultPhotos?.length || 0) >= 2) {
-      alert("O Vault Seguro suporta no máximo 2 representações íntimas.");
+      alert("Máximo 2 fotos no Vault.");
       return;
     }
 
@@ -331,26 +339,10 @@ const App: React.FC = () => {
   }, [currentUser]);
 
   const tutorialPages = [
-    {
-      icon: Sparkles,
-      title: "Descoberta",
-      desc: "Navegue pelos membros da sociedade Noir. Deslize para a direita para demonstrar interesse ou use o raio para uma conexão imediata."
-    },
-    {
-      icon: Lock,
-      title: "O Vault",
-      desc: "Seu cofre pessoal. Proteja fotos e mídias privadas e escolha exatamente quem pode visualizá-las em cada chat."
-    },
-    {
-      icon: MessageCircle,
-      title: "Sussurros",
-      desc: "Conversas totalmente criptografadas e seguras. O sigilo absoluto é o pilar da nossa comunidade."
-    },
-    {
-      icon: Globe,
-      title: "Itinerante",
-      desc: "Explore outras frequências. Altere sua localização manual para conhecer pessoas em outras cidades do Véu."
-    }
+    { icon: Sparkles, title: "Descoberta", desc: "Navegue pelos membros da sociedade Noir." },
+    { icon: Lock, title: "O Vault", desc: "Seu cofre pessoal e secreto." },
+    { icon: MessageCircle, title: "Sussurros", desc: "Conversas totalmente criptografadas." },
+    { icon: Globe, title: "Itinerante", desc: "Explore outras cidades do Véu." }
   ];
 
   const BottomNav = () => (
@@ -445,14 +437,7 @@ const App: React.FC = () => {
                 <h2 className="text-2xl font-serif italic text-white">Sua Natureza</h2>
                 <div className="space-y-4">
                   <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Idade</p>
-                  <Input 
-                    type="number" 
-                    placeholder="Sua idade"
-                    value={formProfile.age || ''} 
-                    onChange={e => setFormProfile({...formProfile, age: parseInt(e.target.value) || undefined})} 
-                    min={18} 
-                    max={99} 
-                  />
+                  <Input type="number" placeholder="Sua idade" value={formProfile.age || ''} onChange={e => setFormProfile({...formProfile, age: parseInt(e.target.value) || undefined})} min={18} max={99} />
                 </div>
                 <div className="space-y-4">
                   <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Gênero</p>
@@ -460,52 +445,18 @@ const App: React.FC = () => {
                   <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Buscando</p>
                   <SelectionChips options={OPTIONS.genders} value={formProfile.seeking} onChange={(v: any) => setFormProfile({...formProfile, seeking: v})} multiple />
                 </div>
-                <Button fullWidth onClick={() => {
-                  if (!formProfile.age || formProfile.age < 18) {
-                    alert("A idade mínima é 18 anos.");
-                    return;
-                  }
-                  setOnboardingStep(2);
-                }}>Próximo</Button>
+                <Button fullWidth onClick={() => { if (!formProfile.age || formProfile.age < 18) { alert("Mínimo 18 anos."); return; } setOnboardingStep(2); }}>Próximo</Button>
               </div>
             )}
             {onboardingStep === 2 && (
               <div className="space-y-6 animate-in fade-in slide-in-from-right duration-500">
                 <h2 className="text-2xl font-serif italic text-white">Sua Localização</h2>
-                <p className="text-[11px] text-gray-500 italic">Defina sua base no Véu ou use o GPS para conexões em tempo real.</p>
-                
-                <button 
-                  onClick={requestGPS}
-                  className="w-full flex items-center justify-between p-6 bg-indigo-600/10 border border-indigo-500/20 rounded-3xl text-left active:scale-[0.98] transition-all"
-                >
-                  <div className="flex items-center gap-4">
-                    <LocateFixed size={24} className="text-indigo-400" />
-                    <div>
-                      <span className="block text-sm font-serif italic text-white">Ativar GPS do Aparelho</span>
-                      <span className="text-[9px] text-gray-500 uppercase font-black tracking-widest">Precisão de Contato</span>
-                    </div>
-                  </div>
-                </button>
-
+                <button onClick={requestGPS} className="w-full flex items-center justify-between p-6 bg-indigo-600/10 border border-indigo-500/20 rounded-3xl text-left active:scale-[0.98] transition-all"><div className="flex items-center gap-4"><LocateFixed size={24} className="text-indigo-400" /><div><span className="block text-sm font-serif italic text-white">Ativar GPS</span><span className="text-[9px] text-gray-500 uppercase font-black tracking-widest">Precisão Noir</span></div></div></button>
                 <div className="space-y-4">
-                  <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Ou escolha sua Cidade</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {TRAVEL_CITIES.map(c => (
-                      <button 
-                        key={c}
-                        onClick={() => handleSelectCity(c)}
-                        className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${formProfile.location?.city === c ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-white/5 border-white/5 text-gray-500'}`}
-                      >
-                        {c}
-                      </button>
-                    ))}
-                  </div>
+                  <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Escolha sua Cidade</p>
+                  <div className="grid grid-cols-2 gap-2">{TRAVEL_CITIES.map(c => (<button key={c} onClick={() => handleSelectCity(c)} className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${formProfile.location?.city === c ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-white/5 border-white/5 text-gray-500'}`}>{c}</button>))}</div>
                 </div>
-
-                <div className="flex gap-4">
-                  <Button variant="outline" className="flex-1" onClick={() => setOnboardingStep(1)}>Voltar</Button>
-                  <Button className="flex-[2]" onClick={() => setOnboardingStep(3)}>Próximo</Button>
-                </div>
+                <div className="flex gap-4"><Button variant="outline" className="flex-1" onClick={() => setOnboardingStep(1)}>Voltar</Button><Button className="flex-[2]" onClick={() => setOnboardingStep(3)}>Próximo</Button></div>
               </div>
             )}
             {onboardingStep === 3 && (
@@ -516,7 +467,7 @@ const App: React.FC = () => {
                    <SelectionChips options={Object.values(Objective)} value={formProfile.objectives} onChange={(v: any) => setFormProfile({...formProfile, objectives: v})} multiple />
                 </div>
                 <div className="space-y-4">
-                   <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Interesses / Esportes</p>
+                   <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Interesses</p>
                    <SelectionChips options={OPTIONS.sports} value={formProfile.interests} onChange={(v: any) => setFormProfile({...formProfile, interests: v})} multiple />
                 </div>
                 <div className="flex gap-4"><Button variant="outline" className="flex-1" onClick={() => setOnboardingStep(2)}>Voltar</Button><Button className="flex-[2]" onClick={() => setOnboardingStep(4)}>Próximo</Button></div>
@@ -526,11 +477,11 @@ const App: React.FC = () => {
               <div className="space-y-6 animate-in fade-in slide-in-from-right duration-500">
                 <h2 className="text-2xl font-serif italic text-white">Sua Frequência</h2>
                 <div className="space-y-4">
-                   <div className="flex items-center gap-2"><Music size={14} className="text-indigo-400" /><p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Música (Multiseleção)</p></div>
+                   <div className="flex items-center gap-2"><Music size={14} className="text-indigo-400" /><p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Música</p></div>
                    <SelectionChips options={OPTIONS.music} value={formProfile.music} onChange={(v: any) => setFormProfile({...formProfile, music: v})} multiple />
                 </div>
                 <div className="space-y-4">
-                   <div className="flex items-center gap-2"><Smile size={14} className="text-indigo-400" /><p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Vibe (Multiseleção)</p></div>
+                   <div className="flex items-center gap-2"><Smile size={14} className="text-indigo-400" /><p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Vibe</p></div>
                    <SelectionChips options={OPTIONS.vibes} value={formProfile.environment} onChange={(v: any) => setFormProfile({...formProfile, environment: v})} multiple />
                 </div>
                 <div className="flex gap-4"><Button variant="outline" className="flex-1" onClick={() => setOnboardingStep(3)}>Voltar</Button><Button className="flex-[2]" onClick={() => setOnboardingStep(5)}>Próximo</Button></div>
@@ -539,26 +490,22 @@ const App: React.FC = () => {
             {onboardingStep === 5 && (
               <div className="space-y-6 animate-in fade-in slide-in-from-right duration-500">
                 <h2 className="text-2xl font-serif italic text-white">Manifesto Noir</h2>
-                <div className="space-y-4">
-                  <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Biografia</p>
-                  <textarea className="w-full bg-white/[0.03] border border-white/10 rounded-[2rem] p-6 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-all font-light italic leading-relaxed" placeholder="Conte seu manifesto..." value={formProfile.bio} rows={8} onChange={(e) => setFormProfile({...formProfile, bio: e.target.value})} />
-                </div>
+                <textarea className="w-full bg-white/[0.03] border border-white/10 rounded-[2rem] p-6 text-sm text-white focus:outline-none focus:border-indigo-500/50 transition-all italic leading-relaxed" placeholder="Conte seu manifesto..." value={formProfile.bio} rows={8} onChange={(e) => setFormProfile({...formProfile, bio: e.target.value})} />
                 <div className="flex gap-4"><Button variant="outline" className="flex-1" onClick={() => setOnboardingStep(4)}>Voltar</Button><Button className="flex-[2]" onClick={() => { if(!formProfile.bio) { alert("Sua bio é obrigatória."); return; } setOnboardingStep(6); }}>Próximo</Button></div>
               </div>
             )}
             {onboardingStep === 6 && (
               <div className="space-y-6 animate-in fade-in slide-in-from-right duration-500">
                 <h2 className="text-2xl font-serif italic text-white">Sua Galeria</h2>
-                <p className="text-[11px] text-gray-500 italic">O VELUM solicita acesso à galeria para definir suas representações públicas.</p>
                 <input type="file" hidden ref={fileInputRef} onChange={(e) => handlePhotoUpload(e, false)} accept="image/*" />
                 <div className="grid grid-cols-2 gap-4">
                   {(formProfile.photos || []).map((p, i) => (
-                    <div key={i} className="aspect-[3/4] rounded-2xl overflow-hidden relative border border-white/10 shadow-lg">
+                    <div key={i} className="aspect-[3/4] rounded-2xl overflow-hidden relative border border-white/10">
                       <img src={p} className="w-full h-full object-cover" alt="User" />
                       <button onClick={() => setFormProfile(prev => ({...prev, photos: prev.photos?.filter((_, idx) => idx !== i)}))} className="absolute top-2 right-2 bg-black/60 p-2 rounded-full text-white"><X size={14}/></button>
                     </div>
                   ))}
-                  {(formProfile.photos?.length || 0) < 3 && <button onClick={() => handlePhotoRequest(false)} className="aspect-[3/4] rounded-2xl border-2 border-dashed border-white/10 flex flex-col items-center justify-center text-gray-500 bg-white/5"><Plus size={32} /><span className="text-[10px] mt-2 uppercase font-black tracking-widest">Foto</span></button>}
+                  {(formProfile.photos?.length || 0) < 3 && <button onClick={() => handlePhotoRequest(false)} className="aspect-[3/4] rounded-2xl border-2 border-dashed border-white/10 flex flex-col items-center justify-center text-gray-500 bg-white/5"><Plus size={32} /></button>}
                 </div>
                 <div className="flex gap-4"><Button variant="outline" className="flex-1" onClick={() => setOnboardingStep(5)}>Voltar</Button><Button className="flex-[2]" onClick={() => handleSaveProfile(false)}>Concluir</Button></div>
               </div>
@@ -637,43 +584,18 @@ const App: React.FC = () => {
               </div>
             )}
           </div>
-          
-          {/* Travel Mode Modal */}
           {isTravelModeOpen && (
             <div className="absolute inset-0 z-[200] bg-black/80 backdrop-blur-xl animate-in fade-in duration-300">
               <div className="flex flex-col h-full">
                 <Header title="Frequência" onBack={() => setIsTravelModeOpen(false)} />
                 <div className="flex-1 overflow-y-auto p-8 space-y-6 no-scrollbar">
-                  <button 
-                    onClick={requestGPS}
-                    className="w-full flex items-center justify-between p-6 bg-indigo-600/10 border border-indigo-500/20 rounded-3xl text-left active:scale-[0.98] transition-all"
-                  >
-                    <div className="flex items-center gap-4">
-                      <LocateFixed size={24} className="text-indigo-400" />
-                      <div>
-                        <span className="block text-sm font-serif italic text-white">Detectar GPS</span>
-                        <span className="text-[9px] text-gray-500 uppercase font-black tracking-widest">Precisão Local</span>
-                      </div>
-                    </div>
-                  </button>
-                  
+                  <button onClick={requestGPS} className="w-full flex items-center justify-between p-6 bg-indigo-600/10 border border-indigo-500/20 rounded-3xl text-left active:scale-[0.98] transition-all"><div className="flex items-center gap-4"><LocateFixed size={24} className="text-indigo-400" /><div><span className="block text-sm font-serif italic text-white">Detectar GPS</span></div></div></button>
                   <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest px-2">Cidades Mapeadas</p>
-                  <div className="grid grid-cols-1 gap-3">
-                    {TRAVEL_CITIES.map(city => (
-                      <button 
-                        key={city}
-                        onClick={() => handleSelectCity(city)}
-                        className={`w-full p-6 rounded-3xl text-left transition-all active:scale-[0.98] border ${currentUser?.location.city === city ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-white/5 border-white/5 text-gray-400'}`}
-                      >
-                        <span className="font-serif italic text-lg">{city}</span>
-                      </button>
-                    ))}
-                  </div>
+                  <div className="grid grid-cols-1 gap-3">{TRAVEL_CITIES.map(city => (<button key={city} onClick={() => handleSelectCity(city)} className={`w-full p-6 rounded-3xl text-left transition-all active:scale-[0.98] border ${currentUser?.location.city === city ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-white/5 border-white/5 text-gray-400'}`}><span className="font-serif italic text-lg">{city}</span></button>))}</div>
                 </div>
               </div>
             </div>
           )}
-          
           <BottomNav />
         </div>
       )}
@@ -683,23 +605,9 @@ const App: React.FC = () => {
           <Header title="Sussurros" />
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 no-scrollbar">
             {MOCK_PROFILES.map(p => (
-              <button 
-                key={p.uid} 
-                onClick={() => openChat(p)}
-                className="w-full flex items-center gap-4 p-4 bg-white/[0.03] border border-white/5 rounded-3xl active:scale-[0.98] transition-all"
-              >
-                <div className="w-16 h-16 rounded-2xl overflow-hidden border border-white/10 shrink-0">
-                  <img src={p.photos[0]} className="w-full h-full object-cover" />
-                </div>
-                <div className="flex-1 text-left">
-                  <h4 className="font-serif italic text-white text-lg">{p.name}</h4>
-                  <p className="text-xs text-gray-500 truncate">
-                    {chatHistory[p.uid]?.length > 0 
-                      ? chatHistory[p.uid][chatHistory[p.uid].length - 1].text 
-                      : 'Clique para sussurrar...'}
-                  </p>
-                </div>
-                {chatHistory[p.uid]?.length > 0 && <div className="w-2 h-2 rounded-full bg-indigo-500" />}
+              <button key={p.uid} onClick={() => openChat(p)} className="w-full flex items-center gap-4 p-4 bg-white/[0.03] border border-white/5 rounded-3xl active:scale-[0.98] transition-all">
+                <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0"><img src={p.photos[0]} className="w-full h-full object-cover" /></div>
+                <div className="flex-1 text-left"><h4 className="font-serif italic text-white text-lg">{p.name}</h4><p className="text-xs text-gray-500 truncate">{chatHistory[p.uid]?.length > 0 ? chatHistory[p.uid][chatHistory[p.uid].length - 1].text : 'Clique para sussurrar...'}</p></div>
               </button>
             ))}
           </div>
@@ -709,75 +617,14 @@ const App: React.FC = () => {
 
       {currentPage === AppState.CHAT && selectedPartner && (
         <div className="flex-1 flex flex-col h-full overflow-hidden">
-          <Header 
-            title={selectedPartner.name} 
-            onBack={() => setCurrentPage(AppState.CHAT_LIST)} 
-            rightElement={
-              <button 
-                onClick={toggleRevealVault}
-                className={`p-3 rounded-2xl border transition-all flex items-center gap-2 ${revealedVaults[selectedPartner.uid] ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-white/5 border-white/10 text-indigo-400'}`}
-              >
-                {revealedVaults[selectedPartner.uid] ? <Unlock size={18}/> : <Lock size={18}/>}
-                <span className="text-[10px] font-black uppercase tracking-widest">{revealedVaults[selectedPartner.uid] ? 'Revelado' : 'Revelar Vault'}</span>
-              </button>
-            }
-          />
-          
-          <button 
-            onClick={() => setCurrentPage(AppState.VIEW_PARTNER)}
-            className="px-6 py-3 bg-indigo-600/5 border-b border-white/5 flex items-center justify-between text-left group"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full overflow-hidden border border-indigo-500/20">
-                <img src={selectedPartner.photos[0]} className="w-full h-full object-cover" />
-              </div>
-              <span className="text-[10px] uppercase font-black text-indigo-300 tracking-widest">Perfil Completo</span>
-            </div>
-            <ChevronLeft size={14} className="rotate-180 text-indigo-400" />
-          </button>
-
+          <Header title={selectedPartner.name} onBack={() => setCurrentPage(AppState.CHAT_LIST)} rightElement={<button onClick={toggleRevealVault} className={`p-3 rounded-2xl border transition-all flex items-center gap-2 ${revealedVaults[selectedPartner.uid] ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-white/5 border-white/10 text-indigo-400'}`}>{revealedVaults[selectedPartner.uid] ? <Unlock size={18}/> : <Lock size={18}/>}<span className="text-[10px] font-black uppercase tracking-widest">{revealedVaults[selectedPartner.uid] ? 'Revelado' : 'Revelar Vault'}</span></button>} />
+          <button onClick={() => setCurrentPage(AppState.VIEW_PARTNER)} className="px-6 py-3 bg-indigo-600/5 border-b border-white/5 flex items-center justify-between text-left group"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full overflow-hidden border border-indigo-500/20"><img src={selectedPartner.photos[0]} className="w-full h-full object-cover" /></div><span className="text-[10px] uppercase font-black text-indigo-300 tracking-widest">Perfil Completo</span></div><ChevronLeft size={14} className="rotate-180 text-indigo-400" /></button>
           <div className="flex-1 overflow-y-auto p-6 space-y-4 flex flex-col no-scrollbar bg-[#09090b]">
-             <div className="text-center py-4 mb-2">
-                <span className="text-[9px] uppercase tracking-[0.3em] text-gray-600 font-black">Criptografia Noir Ativa</span>
-             </div>
-             
-             {(chatHistory[selectedPartner.uid] || []).map((msg) => (
-                <div 
-                  key={msg.id} 
-                  className={`max-w-[80%] p-4 rounded-2xl text-sm italic animate-in slide-in-from-bottom-2 duration-300 ${
-                    msg.senderId === currentUser?.uid 
-                      ? 'self-end bg-indigo-600 text-white shadow-lg' 
-                      : 'self-start bg-white/[0.05] border border-white/5 text-gray-200'
-                  }`}
-                >
-                  {msg.text}
-                </div>
-             ))}
-             
-             {revealedVaults[selectedPartner.uid] && (
-               <div className="p-4 bg-indigo-500/20 border border-indigo-500/40 rounded-2xl self-center text-center max-w-[90%] animate-in zoom-in">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-indigo-200 mb-1">Vault Revelado</p>
-                  <p className="text-[11px] text-indigo-100 italic">Seu Vault está visível para {selectedPartner.name}.</p>
-               </div>
-             )}
+             {(chatHistory[selectedPartner.uid] || []).map((msg) => (<div key={msg.id} className={`max-w-[80%] p-4 rounded-2xl text-sm italic ${msg.senderId === currentUser?.uid ? 'self-end bg-indigo-600 text-white shadow-lg' : 'self-start bg-white/[0.05] border border-white/5 text-gray-200'}`}>{msg.text}</div>))}
           </div>
-          
           <div className="p-6 bg-[#070708] border-t border-white/5 flex items-center gap-4 safe-area-bottom">
-             <div className="flex-1 relative">
-                <input 
-                  value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                  placeholder="Sussurrar..." 
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 focus:outline-none text-white text-sm" 
-                />
-             </div>
-             <button 
-                onClick={handleSendMessage}
-                className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white active:scale-90 transition-all shadow-lg"
-              >
-                <Send size={20} />
-             </button>
+             <div className="flex-1 relative"><input value={messageInput} onChange={(e) => setMessageInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()} placeholder="Sussurrar..." className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 focus:outline-none text-white text-sm" /></div>
+             <button onClick={handleSendMessage} className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white active:scale-90 transition-all shadow-lg"><Send size={20} /></button>
           </div>
         </div>
       )}
@@ -786,78 +633,11 @@ const App: React.FC = () => {
         <div className="flex-1 flex flex-col h-full overflow-hidden">
           <Header title={`Identidade Noir`} onBack={() => setCurrentPage(AppState.CHAT)} />
           <div className="flex-1 overflow-y-auto px-8 pb-32 space-y-10 no-scrollbar py-6">
-            <div className="aspect-square w-full rounded-[3.5rem] overflow-hidden border border-white/10 relative shadow-2xl">
-              <img src={selectedPartner.photos[0]} className="w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent" />
-              <div className="absolute bottom-8 left-8 right-8">
-                <div className="flex items-center gap-3 mb-2">
-                  <h2 className="text-3xl font-serif italic text-white">{selectedPartner.name}, {selectedPartner.age}</h2>
-                  {selectedPartner.isPrivate && <Lock size={16} className="text-indigo-400" />}
-                </div>
-                <div className="flex gap-2">
-                  <Badge active>{selectedPartner.gender}</Badge>
-                  <Badge>{calculateDistance(currentUser!.location, selectedPartner.location)}KM</Badge>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Manifesto</p>
-              <div className="bg-white/[0.03] border border-white/5 rounded-[2rem] p-8">
-                <p className="text-sm text-gray-300 italic leading-relaxed">"{selectedPartner.bio}"</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-6 bg-white/[0.03] border border-white/5 rounded-[2rem] text-center">
-                 <h4 className="text-[9px] uppercase tracking-widest text-gray-500 font-black mb-1">Vibe</h4>
-                 <p className="font-serif italic text-lg text-white">
-                    {Array.isArray(selectedPartner.environment) ? selectedPartner.environment[0] : selectedPartner.environment || 'Misterioso'}
-                 </p>
-              </div>
-              <div className="p-6 bg-white/[0.03] border border-white/5 rounded-[2rem] text-center">
-                 <h4 className="text-[9px] uppercase tracking-widest text-gray-500 font-black mb-1">Música</h4>
-                 <p className="font-serif italic text-lg text-white">
-                    {Array.isArray(selectedPartner.music) ? selectedPartner.music[0] : selectedPartner.music || 'Deep House'}
-                 </p>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Galeria Pública</p>
-              <div className="grid grid-cols-2 gap-3">
-                {selectedPartner.photos.map((p, i) => (
-                  <div key={i} className="aspect-[3/4] rounded-2xl overflow-hidden border border-white/10">
-                    <img src={p} className="w-full h-full object-cover" />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {revealedVaults[selectedPartner.uid] ? (
-              <div className="space-y-4 pt-4 border-t border-indigo-500/20">
-                <div className="flex items-center gap-2">
-                  <Unlock size={14} className="text-indigo-400" />
-                  <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Vault Compartilhado</p>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {(selectedPartner.vaultPhotos || []).map((p, i) => (
-                    <div key={i} className="aspect-[3/4] rounded-2xl overflow-hidden border border-indigo-500/30 shadow-[0_0_20px_rgba(79,70,229,0.2)]">
-                      <img src={p} className="w-full h-full object-cover" />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="p-8 bg-indigo-600/5 border border-indigo-500/10 rounded-3xl text-center space-y-4">
-                <Lock size={32} className="mx-auto text-indigo-400 opacity-40" />
-                <p className="text-xs text-gray-500 italic px-4">O Vault de {selectedPartner.name} está oculto.</p>
-              </div>
-            )}
+            <div className="aspect-square w-full rounded-[3.5rem] overflow-hidden relative shadow-2xl"><img src={selectedPartner.photos[0]} className="w-full h-full object-cover" /><div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent" /><div className="absolute bottom-8 left-8 right-8"><div className="flex items-center gap-3 mb-2"><h2 className="text-3xl font-serif italic text-white">{selectedPartner.name}, {selectedPartner.age}</h2></div><div className="flex gap-2"><Badge active>{selectedPartner.gender}</Badge></div></div></div>
+            <div className="space-y-4"><p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Manifesto</p><div className="bg-white/[0.03] border border-white/5 rounded-[2rem] p-8"><p className="text-sm text-gray-300 italic leading-relaxed">"{selectedPartner.bio}"</p></div></div>
+            <div className="grid grid-cols-2 gap-3">{selectedPartner.photos.map((p, i) => (<div key={i} className="aspect-[3/4] rounded-2xl overflow-hidden border border-white/10"><img src={p} className="w-full h-full object-cover" /></div>))}</div>
           </div>
-          <div className="shrink-0 p-6 safe-area-bottom border-t border-white/5">
-            <Button fullWidth onClick={() => setCurrentPage(AppState.CHAT)}>Voltar aos Sussurros</Button>
-          </div>
+          <div className="shrink-0 p-6 safe-area-bottom border-t border-white/5"><Button fullWidth onClick={() => setCurrentPage(AppState.CHAT)}>Voltar aos Sussurros</Button></div>
         </div>
       )}
 
@@ -865,41 +645,11 @@ const App: React.FC = () => {
         <div className="flex-1 flex flex-col h-full overflow-hidden">
           <Header title="Vault Seguro" />
           <div className="flex-1 overflow-y-auto px-8 py-6 space-y-8 no-scrollbar">
-            <div className="bg-indigo-600/5 border border-indigo-500/10 rounded-[2.5rem] p-8 text-center space-y-4">
-              <Lock size={48} className="mx-auto text-indigo-400 opacity-50" />
-              <h3 className="text-xl font-serif italic text-white">Seu Cofre Íntimo</h3>
-              <p className="text-xs text-gray-500 italic px-4">Máximo de 2 fotos criptografadas para visualização sob demanda.</p>
-              <p className="text-[9px] text-gray-600 uppercase font-black">Acesso à galeria solicitado ao carregar.</p>
-            </div>
-
+            <div className="bg-indigo-600/5 border border-indigo-500/10 rounded-[2.5rem] p-8 text-center space-y-4"><Lock size={48} className="mx-auto text-indigo-400 opacity-50" /><h3 className="text-xl font-serif italic text-white">Seu Cofre Íntimo</h3></div>
             <div className="grid grid-cols-2 gap-4">
-              {(currentUser?.vaultPhotos || []).map((p, i) => (
-                <div key={i} className="aspect-[3/4] rounded-3xl overflow-hidden relative border border-white/10 shadow-2xl group">
-                  <img src={p} className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-700" />
-                  <div className="absolute inset-0 bg-black/40 group-hover:bg-transparent transition-all" />
-                  <button 
-                    onClick={() => {
-                      const updated = { ...currentUser!, vaultPhotos: currentUser!.vaultPhotos.filter((_, idx) => idx !== i) };
-                      handleSaveProfile(true, updated);
-                    }} 
-                    className="absolute top-3 right-3 bg-black/60 p-2 rounded-full text-white active:scale-90"
-                  >
-                    <X size={16}/>
-                  </button>
-                </div>
-              ))}
-              
-              {(currentUser?.vaultPhotos?.length || 0) < 2 && (
-                <button 
-                  onClick={() => handlePhotoRequest(true, true)}
-                  className="aspect-[3/4] rounded-3xl border-2 border-dashed border-indigo-500/20 bg-indigo-500/5 flex flex-col items-center justify-center text-indigo-400 group active:scale-95 transition-all"
-                >
-                  <Plus size={40} className="group-hover:scale-110 transition-transform" />
-                  <span className="text-[10px] mt-2 uppercase font-black tracking-widest text-indigo-300">Adicionar</span>
-                </button>
-              )}
+              {(currentUser?.vaultPhotos || []).map((p, i) => (<div key={i} className="aspect-[3/4] rounded-3xl overflow-hidden relative border border-white/10 shadow-2xl"><img src={p} className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-700" /><button onClick={() => handleSaveProfile(true, { ...currentUser!, vaultPhotos: currentUser!.vaultPhotos.filter((_, idx) => idx !== i) })} className="absolute top-3 right-3 bg-black/60 p-2 rounded-full text-white"><X size={16}/></button></div>))}
+              {(currentUser?.vaultPhotos?.length || 0) < 2 && <button onClick={() => handlePhotoRequest(true, true)} className="aspect-[3/4] rounded-3xl border-2 border-dashed border-indigo-500/20 bg-indigo-500/5 flex flex-col items-center justify-center text-indigo-400"><Plus size={40} /></button>}
             </div>
-            
             <input type="file" hidden ref={vaultFileInputRef} onChange={handleVaultPhotoUpload} accept="image/*" />
           </div>
           <BottomNav />
@@ -908,45 +658,14 @@ const App: React.FC = () => {
 
       {currentPage === AppState.PROFILE && (
         <div className="flex-1 flex flex-col h-full overflow-hidden">
-          <Header title="Identidade" rightElement={
-            <button onClick={() => { setTutorialStep(0); setCurrentPage(AppState.TUTORIAL); }} className="p-3 bg-white/5 rounded-2xl text-indigo-400 border border-white/10 active:scale-95 transition-all"><Info size={20}/></button>
-          } />
-          <div className="flex-1 overflow-y-auto px-8 pb-32 space-y-10 no-scrollbar">
-            <div className="aspect-square w-full rounded-[3.5rem] overflow-hidden border border-white/10 relative shadow-2xl">
-              <img src={currentUser?.photos[0] || MOCK_USER.photos[0]} className="w-full h-full object-cover" alt="My profile" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent" />
-              <div className="absolute bottom-8 left-8 right-8 flex items-end justify-between">
-                <div><h2 className="text-3xl font-serif italic text-white mb-2">{currentUser?.name}</h2><Badge active>Membro Oficial</Badge></div>
-                <button onClick={() => setCurrentPage(AppState.EDIT_PROFILE)} className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white active:scale-90 transition-all"><Edit3 size={20} /></button>
-              </div>
-            </div>
-            
+          <Header title="Identidade" rightElement={<button onClick={() => { setTutorialStep(0); setCurrentPage(AppState.TUTORIAL); }} className="p-3 bg-white/5 rounded-2xl text-indigo-400 border border-white/10 active:scale-95 transition-all"><Info size={20}/></button>} />
+          <div className="flex-1 overflow-y-auto px-8 pb-32 space-y-10 no-scrollbar py-6">
+            <div className="aspect-square w-full rounded-[3.5rem] overflow-hidden relative shadow-2xl"><img src={currentUser?.photos[0] || MOCK_USER.photos[0]} className="w-full h-full object-cover" /><div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent" /><div className="absolute bottom-8 left-8 right-8 flex items-end justify-between"><div><h2 className="text-3xl font-serif italic text-white mb-2">{currentUser?.name}</h2><Badge active>Membro Oficial</Badge></div><button onClick={() => setCurrentPage(AppState.EDIT_PROFILE)} className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white active:scale-90 transition-all"><Edit3 size={20} /></button></div></div>
             <div className="grid grid-cols-2 gap-4">
-              <button onClick={() => setCurrentPage(AppState.VAULT)} className="p-6 bg-white/[0.03] border border-white/5 rounded-[2rem] text-center active:scale-95 transition-all">
-                 <h4 className="text-[9px] uppercase tracking-widest text-gray-500 font-black mb-1">Vault</h4>
-                 <p className="font-serif italic text-xl text-white">{currentUser?.vaultPhotos?.length || 0} Fotos</p>
-              </button>
-              <div className="p-6 bg-white/[0.03] border border-white/5 rounded-[2rem] text-center">
-                 <h4 className="text-[9px] uppercase tracking-widest text-gray-500 font-black mb-1">Cidade</h4>
-                 <p className="font-serif italic text-lg text-white truncate px-2">{currentUser?.location.city}</p>
-              </div>
+              <button onClick={() => setCurrentPage(AppState.VAULT)} className="p-6 bg-white/[0.03] border border-white/5 rounded-[2rem] text-center"><h4 className="text-[9px] uppercase tracking-widest text-gray-500 font-black mb-1">Vault</h4><p className="font-serif italic text-xl text-white">{currentUser?.vaultPhotos?.length || 0} Fotos</p></button>
+              <div className="p-6 bg-white/[0.03] border border-white/5 rounded-[2rem] text-center"><h4 className="text-[9px] uppercase tracking-widest text-gray-500 font-black mb-1">Cidade</h4><p className="font-serif italic text-lg text-white truncate px-2">{currentUser?.location.city}</p></div>
             </div>
-            
-            <div className="space-y-4">
-               <button onClick={() => { setTutorialStep(0); setCurrentPage(AppState.TUTORIAL); }} className="w-full flex items-center justify-between p-6 bg-indigo-600/5 border border-indigo-500/10 rounded-[2rem] text-left group active:scale-[0.98] transition-all">
-                  <div className="flex items-center gap-4"><Compass size={24} className="text-indigo-400" /><span className="text-sm font-serif italic text-white">Guia Noir</span></div>
-                  <ChevronLeft size={16} className="text-indigo-500 rotate-180" />
-               </button>
-               
-               <div className="flex gap-4 pb-12">
-                 <Button variant="outline" className="flex-1 border-gray-800 text-gray-400" onClick={handleLogout}>
-                   <LogOut size={18} /> Sair
-                 </Button>
-                 <Button variant="danger" className="flex-1" onClick={handleDeleteAccount}>
-                   <Trash2 size={18} /> Excluir
-                 </Button>
-               </div>
-            </div>
+            <div className="flex gap-4 pb-12"><Button variant="outline" className="flex-1" onClick={handleLogout}><LogOut size={18} /> Sair</Button><Button variant="danger" className="flex-1" onClick={handleDeleteAccount}><Trash2 size={18} /> Excluir</Button></div>
           </div>
           <BottomNav />
         </div>
@@ -955,15 +674,46 @@ const App: React.FC = () => {
       {currentPage === AppState.EDIT_PROFILE && (
         <div className="flex-1 flex flex-col h-full overflow-hidden">
            <Header title="Editar Perfil" onBack={() => setCurrentPage(AppState.PROFILE)} />
-           <div className="flex-1 overflow-y-auto px-8 pb-32 space-y-10 no-scrollbar py-6">
-              <div className="space-y-4">
-                 <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Manifesto</p>
-                 <textarea className="w-full bg-white/[0.03] border border-white/10 rounded-[2rem] p-6 text-sm text-white focus:outline-none transition-all font-light italic" value={currentUser?.bio} rows={4} onChange={(e) => setCurrentUser(prev => prev ? ({...prev, bio: e.target.value}) : null)} />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2"><p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Nome Público</p><Input value={currentUser?.name} onChange={(e) => setCurrentUser(prev => prev ? ({...prev, name: e.target.value}) : null)} /></div>
-                <div className="space-y-2"><p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Idade</p><Input type="number" value={currentUser?.age} onChange={(e) => setCurrentUser(prev => prev ? ({...prev, age: parseInt(e.target.value) || 0}) : null)} /></div>
-              </div>
+           <div className="flex-1 overflow-y-auto px-8 pb-32 space-y-12 no-scrollbar py-8">
+              <section className="space-y-6">
+                <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest border-b border-indigo-500/20 pb-2">Identidade</p>
+                <div className="space-y-4">
+                  <div className="space-y-2"><p className="text-[10px] uppercase text-gray-500 font-black tracking-widest">Nome Noir</p><Input value={currentUser?.name} onChange={(e) => setCurrentUser(prev => prev ? ({...prev, name: e.target.value}) : null)} /></div>
+                  <div className="space-y-2"><p className="text-[10px] uppercase text-gray-500 font-black tracking-widest">Idade</p><Input type="number" value={currentUser?.age} onChange={(e) => setCurrentUser(prev => prev ? ({...prev, age: parseInt(e.target.value) || 0}) : null)} /></div>
+                  <div className="space-y-2"><p className="text-[10px] uppercase text-gray-500 font-black tracking-widest">Gênero</p><SelectionChips options={OPTIONS.genders} value={currentUser?.gender} onChange={(v: any) => setCurrentUser(prev => prev ? ({...prev, gender: v}) : null)} /></div>
+                  <div className="space-y-2"><p className="text-[10px] uppercase text-gray-500 font-black tracking-widest">Buscando</p><SelectionChips options={OPTIONS.genders} value={currentUser?.seeking} onChange={(v: any) => setCurrentUser(prev => prev ? ({...prev, seeking: v}) : null)} multiple /></div>
+                </div>
+              </section>
+
+              <section className="space-y-6">
+                <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest border-b border-indigo-500/20 pb-2">Sua Base no Véu</p>
+                <div className="space-y-4">
+                  <button onClick={requestGPS} className="w-full flex items-center justify-between p-4 bg-indigo-600/5 border border-indigo-500/10 rounded-2xl text-left active:scale-[0.98] transition-all"><div className="flex items-center gap-3"><LocateFixed size={18} className="text-indigo-400" /><span className="text-xs font-serif italic text-white">Atualizar via GPS</span></div></button>
+                  <div className="grid grid-cols-2 gap-2">{TRAVEL_CITIES.map(c => (<button key={c} onClick={() => handleSelectCity(c)} className={`px-4 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest border transition-all ${currentUser?.location.city === c ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-white/5 border-white/5 text-gray-500'}`}>{c}</button>))}</div>
+                </div>
+              </section>
+
+              <section className="space-y-6">
+                <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest border-b border-indigo-500/20 pb-2">Intenções & Estilo</p>
+                <div className="space-y-4">
+                  <div className="space-y-2"><p className="text-[10px] uppercase text-gray-500 font-black tracking-widest">Objetivos</p><SelectionChips options={Object.values(Objective)} value={currentUser?.objectives} onChange={(v: any) => setCurrentUser(prev => prev ? ({...prev, objectives: v}) : null)} multiple /></div>
+                  <div className="space-y-2"><p className="text-[10px] uppercase text-gray-500 font-black tracking-widest">Interesses</p><SelectionChips options={OPTIONS.sports} value={currentUser?.interests} onChange={(v: any) => setCurrentUser(prev => prev ? ({...prev, interests: v}) : null)} multiple /></div>
+                </div>
+              </section>
+
+              <section className="space-y-6">
+                <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest border-b border-indigo-500/20 pb-2">Frequência</p>
+                <div className="space-y-4">
+                  <div className="space-y-2"><p className="text-[10px] uppercase text-gray-500 font-black tracking-widest">Música</p><SelectionChips options={OPTIONS.music} value={currentUser?.music} onChange={(v: any) => setCurrentUser(prev => prev ? ({...prev, music: v}) : null)} multiple /></div>
+                  <div className="space-y-2"><p className="text-[10px] uppercase text-gray-500 font-black tracking-widest">Vibe</p><SelectionChips options={OPTIONS.vibes} value={currentUser?.environment} onChange={(v: any) => setCurrentUser(prev => prev ? ({...prev, environment: v}) : null)} multiple /></div>
+                </div>
+              </section>
+
+              <section className="space-y-6">
+                <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest border-b border-indigo-500/20 pb-2">Manifesto</p>
+                <textarea className="w-full bg-white/[0.03] border border-white/10 rounded-[2rem] p-6 text-sm text-white focus:outline-none transition-all italic leading-relaxed" value={currentUser?.bio} rows={6} onChange={(e) => setCurrentUser(prev => prev ? ({...prev, bio: e.target.value}) : null)} />
+              </section>
+
               <Button fullWidth onClick={() => handleSaveProfile(true)}>Atualizar Identidade</Button>
            </div>
         </div>
