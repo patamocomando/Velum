@@ -4,7 +4,7 @@ import {
   User, Lock, Ghost, MessageCircle, Globe, Zap, 
   Eye, EyeOff, Edit3, Plus, X, LocateFixed, 
   Sparkles, LockKeyhole, Music, Smile, ShieldCheck, Compass,
-  CheckCircle2, LogOut, Send, Unlock, Trash2
+  CheckCircle2, LogOut, Send, Unlock, Trash2, Camera
 } from 'lucide-react';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { 
@@ -21,13 +21,12 @@ import {
   addDoc,
   deleteDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-import { AppState, Objective, Gender, Profile, Message } from './types';
+import { AppState, Objective, Gender, Profile, Message, Mood } from './types';
 import { MOCK_PROFILES, TRAVEL_CITIES, OPTIONS } from './constants';
 import { generateId, calculateDistance } from './utils';
 import { Button, Input, Card, Badge, Header } from './components/UI';
 
 // Configuração Firebase
-// Nota: Substitua pelas suas chaves reais no Console do Firebase para produção.
 const firebaseConfig = {
   apiKey: "AIzaSy_VELUM_REAL_KEY_HERE", 
   authDomain: "velum-noir.firebaseapp.com",
@@ -40,12 +39,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-const tutorialPages = [
-  { icon: Compass, title: 'Descoberta Noir', desc: 'Explore perfis selecionados com total discrição e elegância.' },
-  { icon: ShieldCheck, title: 'Pacto de Silêncio', desc: 'Sua privacidade é nossa lei maior. O que acontece aqui, fica aqui.' },
-  { icon: LockKeyhole, title: 'Vault Privado', desc: 'Compartilhe suas fotos mais íntimas apenas com quem você desejar.' }
-];
-
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<AppState>(AppState.LANDING);
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
@@ -56,32 +49,27 @@ const App: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState(''); 
   const [showPassword, setShowPassword] = useState(false);
   
-  // Perfil Global e Descoberta
   const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isTravelModeOpen, setIsTravelModeOpen] = useState(false);
   
-  // Onboarding
   const [onboardingStep, setOnboardingStep] = useState(1);
-  const [tutorialStep, setTutorialStep] = useState(0);
   const [formProfile, setFormProfile] = useState<Partial<Profile>>({
     photos: [], vaultPhotos: [], seeking: [], objectives: [], bio: '', age: undefined, music: [], environment: [], interests: [],
-    location: { lat: -7.1195, lng: -34.8450, city: 'João Pessoa', type: 'GPS' }
+    location: { lat: -7.1195, lng: -34.8450, city: 'João Pessoa', type: 'GPS' },
+    mood: Mood.CONVERSA
   });
   
-  // Chat
   const [selectedPartner, setSelectedPartner] = useState<Profile | null>(null);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [messageInput, setMessageInput] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Helper para ID de Chat Único e Consistente
   const getChatId = (id1: string, id2: string) => [id1, id2].sort().join('_');
 
   useEffect(() => {
     const initApp = async () => {
-      // 1. Verificar sessão local
       const activeUid = localStorage.getItem('velum_active_uid');
       if (activeUid) {
         try {
@@ -91,18 +79,15 @@ const App: React.FC = () => {
             setCurrentPage(AppState.DISCOVER);
           }
         } catch (e) {
-          console.error("Erro ao validar sessão:", e);
+          console.error("Erro na sessão:", e);
         }
       }
       setIsLoading(false);
     };
 
-    // 2. Listener em tempo real para perfis (O "Banco de Dados" vivo)
     const unsubProfiles = onSnapshot(collection(db, "profiles"), (snapshot) => {
       const profiles: Profile[] = [];
       snapshot.forEach(doc => profiles.push(doc.data() as Profile));
-      
-      // Se não houver usuários reais, mostramos os Mocks para não deixar a tela vazia
       setAllProfiles(profiles.length > 0 ? profiles : MOCK_PROFILES);
     });
 
@@ -110,30 +95,24 @@ const App: React.FC = () => {
     return () => unsubProfiles();
   }, []);
 
-  // 3. Listener em tempo real para mensagens (O "Chat" vivo)
   useEffect(() => {
     if (!currentUser || !selectedPartner || currentPage !== AppState.CHAT) return;
-
     const chatId = getChatId(currentUser.uid, selectedPartner.uid);
     const q = query(collection(db, "chats", chatId, "messages"), orderBy("timestamp", "asc"));
-
-    const unsubChat = onSnapshot(q, (snapshot) => {
+    return onSnapshot(q, (snapshot) => {
       const msgs: Message[] = [];
       snapshot.forEach(doc => msgs.push(doc.data() as Message));
       setChatMessages(msgs);
     });
-
-    return () => unsubChat();
   }, [selectedPartner, currentUser, currentPage]);
 
   const handleAuth = async () => {
-    if (!loginPhone || !loginPassword) return alert("Identifique-se para acessar o Véu.");
+    if (!loginPhone || !loginPassword) return alert("Credenciais obrigatórias.");
 
     if (isSignupMode) {
-      // Iniciação: Verifica se o número já existe no Firestore
       const q = query(collection(db, "profiles"), where("phone", "==", loginPhone));
       const checkSnapshot = await getDocs(q);
-      if (!checkSnapshot.empty) return alert("Este número já pertence à nossa sociedade.");
+      if (!checkSnapshot.empty) return alert("Membro já cadastrado.");
 
       const newUid = generateId();
       setFormProfile(p => ({ ...p, uid: newUid, phone: loginPhone, name: loginRealName || 'Membro Noir' }));
@@ -141,10 +120,8 @@ const App: React.FC = () => {
       setOnboardingStep(1);
       setCurrentPage(AppState.ONBOARDING);
     } else {
-      // Login: Autenticação por Telefone no Firestore
       const q = query(collection(db, "profiles"), where("phone", "==", loginPhone));
       const querySnapshot = await getDocs(q);
-      
       let found = false;
       querySnapshot.forEach((doc) => {
         const data = doc.data();
@@ -155,203 +132,173 @@ const App: React.FC = () => {
           found = true;
         }
       });
-      
-      if (!found) alert("Credenciais Noir inválidas.");
+      if (!found) alert("Acesso negado. Verifique telefone e senha.");
     }
   };
 
   const handleSaveProfile = async (isEdit: boolean, updatedData?: Partial<Profile>) => {
-    const profileData = isEdit ? { ...currentUser, ...updatedData } : { ...formProfile, ...updatedData };
-    const password = isEdit ? (currentUser as any).password : (window as any)._tempPass;
+    const profileBase = isEdit ? currentUser : formProfile;
+    if (!profileBase?.uid) return;
+
+    const finalProfile = {
+      ...profileBase,
+      ...updatedData,
+      password: isEdit ? (currentUser as any).password : (window as any)._tempPass,
+      updatedAt: Date.now(),
+      photos: profileBase.photos || [],
+      seeking: profileBase.seeking || [],
+      objectives: profileBase.objectives || []
+    } as Profile;
 
     try {
-      const finalProfile = { 
-        ...profileData, 
-        password,
-        updatedAt: Date.now() 
-      };
-      
-      // Grava no Firestore
-      await setDoc(doc(db, "profiles", profileData.uid!), finalProfile);
-      
+      await setDoc(doc(db, "profiles", finalProfile.uid), finalProfile);
+      setCurrentUser(finalProfile);
       if (isEdit) {
-        setCurrentUser(finalProfile as Profile);
         setCurrentPage(AppState.PROFILE);
       } else {
-        setCurrentUser(finalProfile as Profile);
-        localStorage.setItem('velum_active_uid', profileData.uid!);
+        localStorage.setItem('velum_active_uid', finalProfile.uid);
         setCurrentPage(AppState.SIGNUP);
       }
     } catch (e) {
-      alert("Falha na sincronização com o Véu. Verifique sua conexão.");
+      alert("Erro ao sincronizar com o Firestore.");
     }
   };
 
   const handleSendMessage = async () => {
     if (!messageInput.trim() || !currentUser || !selectedPartner) return;
-    
     const chatId = getChatId(currentUser.uid, selectedPartner.uid);
-    const msg: Message = {
-      id: generateId(),
-      senderId: currentUser.uid,
-      text: messageInput.trim(),
-      timestamp: Date.now()
-    };
-    
-    try {
-      await addDoc(collection(db, "chats", chatId, "messages"), msg);
-      setMessageInput('');
-    } catch (e) {
-      console.error("Erro ao sussurrar:", e);
-    }
+    const msg: Message = { id: generateId(), senderId: currentUser.uid, text: messageInput.trim(), timestamp: Date.now() };
+    await addDoc(collection(db, "chats", chatId, "messages"), msg);
+    setMessageInput('');
   };
 
   const filteredProfiles = useMemo(() => {
     if (!currentUser) return [];
-    
-    // Filtra para não ver a si mesmo e respeitar preferências de gênero
     let list = allProfiles.filter(p => p.uid !== currentUser.uid);
-    if (currentUser.seeking?.length) {
-      list = list.filter(p => currentUser.seeking.includes(p.gender));
-    }
-    
-    // Calcula distância e prioriza os mais próximos ou da mesma cidade
-    return list.map(p => ({ 
-      ...p, 
-      distance: calculateDistance(currentUser.location, p.location) 
-    })).sort((a, b) => {
-      const cityA = a.location.city === currentUser.location.city;
-      const cityB = b.location.city === currentUser.location.city;
-      if (cityA && !cityB) return -1;
-      if (!cityA && cityB) return 1;
-      return (a.distance || 0) - (b.distance || 0);
-    });
+    if (currentUser.seeking?.length) list = list.filter(p => currentUser.seeking.includes(p.gender));
+    return list.map(p => ({ ...p, distance: calculateDistance(currentUser.location, p.location) }))
+               .sort((a, b) => (a.location.city === currentUser.location.city ? -1 : 1));
   }, [allProfiles, currentUser]);
-
-  const BottomNav = () => (
-    <nav className="shrink-0 h-20 bg-[#070708]/95 backdrop-blur-3xl border-t border-white/5 flex items-center justify-around px-4 z-[100] safe-area-bottom">
-      {[
-        { id: AppState.DISCOVER, icon: Sparkles },
-        { id: AppState.CHAT_LIST, icon: MessageCircle },
-        { id: AppState.VAULT, icon: LockKeyhole },
-        { id: AppState.PROFILE, icon: User }
-      ].map((item) => (
-        <button 
-          key={item.id} 
-          onClick={() => { 
-            if(item.id === AppState.DISCOVER) setCurrentIndex(0); 
-            setCurrentPage(item.id); 
-          }} 
-          className={`p-3 transition-all duration-300 ${currentPage === item.id || (currentPage === AppState.CHAT && item.id === AppState.CHAT_LIST) ? 'text-indigo-500 scale-125' : 'text-gray-600'}`}
-        >
-          <item.icon size={22} strokeWidth={currentPage === item.id ? 2.5 : 2} />
-        </button>
-      ))}
-    </nav>
-  );
 
   const SelectionChips = ({ options, value, onChange, multiple = false }: any) => (
     <div className="flex flex-wrap gap-2">
       {options.map((opt: string) => {
         const active = multiple ? value?.includes(opt) : value === opt;
         return (
-          <button 
-            key={opt} 
-            onClick={() => {
-              if (multiple) {
-                const arr = Array.isArray(value) ? value : [];
-                onChange(arr.includes(opt) ? arr.filter((x: any) => x !== opt) : [...arr, opt]);
-              } else onChange(opt);
-            }} 
-            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${active ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-white/5 border-white/5 text-gray-500'}`}
-          >
-            {opt}
-          </button>
+          <button key={opt} onClick={() => {
+            if (multiple) {
+              const arr = Array.isArray(value) ? value : [];
+              onChange(arr.includes(opt) ? arr.filter((x: any) => x !== opt) : [...arr, opt]);
+            } else onChange(opt);
+          }} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${active ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-white/5 border-white/5 text-gray-500'}`}>{opt}</button>
         );
       })}
     </div>
   );
 
-  if (isLoading) return (
-    <div className="h-full w-full bg-[#070708] flex flex-col items-center justify-center">
-      <div className="w-12 h-12 border-4 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin mb-4" />
-      <h1 className="text-xl font-serif italic text-white animate-pulse">VELUM</h1>
-    </div>
+  const BottomNav = () => (
+    <nav className="shrink-0 h-20 bg-[#070708]/95 backdrop-blur-3xl border-t border-white/5 flex items-center justify-around px-4 z-[100] safe-area-bottom">
+      {[{ id: AppState.DISCOVER, icon: Sparkles }, { id: AppState.CHAT_LIST, icon: MessageCircle }, { id: AppState.VAULT, icon: LockKeyhole }, { id: AppState.PROFILE, icon: User }].map((item) => (
+        <button key={item.id} onClick={() => setCurrentPage(item.id)} className={`p-3 transition-all ${currentPage === item.id ? 'text-indigo-500 scale-125' : 'text-gray-600'}`}>
+          <item.icon size={22} />
+        </button>
+      ))}
+    </nav>
   );
+
+  if (isLoading) return <div className="h-full w-full bg-[#070708] flex items-center justify-center font-serif italic text-white animate-pulse">VELUM</div>;
 
   return (
     <div className="flex flex-col h-full w-full max-w-md mx-auto bg-[#070708] overflow-hidden relative">
-      {/* Landing / Auth */}
       {currentPage === AppState.LANDING && (
-        <div className="flex-1 flex flex-col justify-center items-center px-10 relative overflow-hidden">
-          <div className="absolute inset-0 opacity-40">
-            <img src="https://images.unsplash.com/photo-1566417713940-fe7c737a9ef2?auto=format&fit=crop&q=100&w=1200" className="w-full h-full object-cover" />
-          </div>
-          <div className="relative z-10 w-full text-center">
-            <h1 className="text-7xl font-serif italic text-white mb-2 tracking-tighter">VELUM</h1>
-            <p className="text-gray-500 uppercase tracking-[0.6em] text-[9px] mb-12 font-black">NOIR SOCIETY</p>
-            <div className="space-y-3 mb-6">
-              {isSignupMode && <Input placeholder="Nome Real" value={loginRealName} onChange={e => setLoginRealName(e.target.value)} />}
-              <Input type="tel" placeholder="Telefone" value={loginPhone} onChange={e => setLoginPhone(e.target.value)} />
-              <div className="relative">
-                <Input type={showPassword ? "text" : "password"} placeholder="Chave Privada" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} />
-                <button onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 p-2">
-                  {showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}
-                </button>
-              </div>
+        <div className="flex-1 flex flex-col justify-center items-center px-10 text-center relative overflow-hidden">
+          <div className="absolute inset-0 opacity-20"><img src="https://images.unsplash.com/photo-1566417713940-fe7c737a9ef2?q=80&w=1200" className="w-full h-full object-cover" /></div>
+          <h1 className="text-7xl font-serif italic text-white mb-2 relative z-10">VELUM</h1>
+          <p className="text-gray-500 uppercase tracking-[0.5em] text-[9px] mb-12 font-black relative z-10">Noir Society</p>
+          <div className="w-full space-y-3 relative z-10">
+            {isSignupMode && <Input placeholder="Seu Nome Noir" value={loginRealName} onChange={e => setLoginRealName(e.target.value)} />}
+            <Input type="tel" placeholder="Telefone (Login)" value={loginPhone} onChange={e => setLoginPhone(e.target.value)} />
+            <div className="relative">
+              <Input type={showPassword ? "text" : "password"} placeholder="Chave Privada" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} />
+              <button onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500">{showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}</button>
             </div>
             <Button fullWidth onClick={handleAuth}>{isSignupMode ? 'Iniciar Iniciação' : 'Acessar o Véu'}</Button>
-            <button onClick={() => setIsSignupMode(!isSignupMode)} className="mt-8 text-[10px] uppercase font-black text-gray-500 hover:text-white transition-all tracking-widest">
-              {isSignupMode ? 'Voltar' : 'Solicitar Iniciação'}
-            </button>
+            <button onClick={() => setIsSignupMode(!isSignupMode)} className="mt-4 text-[10px] uppercase font-black text-gray-500 tracking-widest">{isSignupMode ? 'Já sou membro' : 'Solicitar Iniciação'}</button>
           </div>
         </div>
       )}
 
-      {/* Onboarding - Resumido para brevidade no XML, focado no salvamento Firestore */}
       {currentPage === AppState.ONBOARDING && (
         <div className="flex-1 flex flex-col h-full overflow-hidden">
           <Header title={`Iniciação ${onboardingStep}/6`} />
-          <div className="flex-1 overflow-y-auto px-8 pb-10 space-y-8 no-scrollbar py-6">
+          <div className="flex-1 overflow-y-auto px-8 py-6 space-y-8 no-scrollbar">
             {onboardingStep === 1 && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-right duration-500">
+              <div className="space-y-6 animate-in fade-in slide-in-from-right">
                 <h2 className="text-2xl font-serif italic text-white">Sua Natureza</h2>
-                <div className="space-y-4">
-                  <Input type="number" placeholder="Sua idade" value={formProfile.age || ''} onChange={e => setFormProfile({...formProfile, age: parseInt(e.target.value) || undefined})} />
-                  <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Gênero</p>
-                  <SelectionChips options={OPTIONS.genders} value={formProfile.gender} onChange={(v: any) => setFormProfile({...formProfile, gender: v})} />
-                  <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Buscando</p>
-                  <SelectionChips options={OPTIONS.genders} value={formProfile.seeking} onChange={(v: any) => setFormProfile({...formProfile, seeking: v})} multiple />
-                </div>
+                <Input type="number" placeholder="Sua idade" value={formProfile.age || ''} onChange={e => setFormProfile({...formProfile, age: parseInt(e.target.value) || undefined})} />
+                <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Gênero</p>
+                <SelectionChips options={OPTIONS.genders} value={formProfile.gender} onChange={(v: any) => setFormProfile({...formProfile, gender: v})} />
+                <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Buscando</p>
+                <SelectionChips options={OPTIONS.genders} value={formProfile.seeking} onChange={(v: any) => setFormProfile({...formProfile, seeking: v})} multiple />
                 <Button fullWidth onClick={() => setOnboardingStep(2)}>Próximo</Button>
               </div>
             )}
             {onboardingStep === 2 && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-right duration-500">
+              <div className="space-y-6 animate-in fade-in slide-in-from-right">
                 <h2 className="text-2xl font-serif italic text-white">Localização</h2>
-                <button onClick={() => navigator.geolocation.getCurrentPosition(pos => setFormProfile({...formProfile, location: { lat: pos.coords.latitude, lng: pos.coords.longitude, city: 'Detectado', type: 'GPS' }}))} className="w-full p-6 bg-indigo-600/10 border border-indigo-500/20 rounded-3xl text-indigo-400 flex items-center justify-center gap-4">
-                  <LocateFixed size={24} /> Ativar GPS
-                </button>
-                <div className="grid grid-cols-2 gap-2">
-                  {TRAVEL_CITIES.map(c => (
-                    <button key={c} onClick={() => setFormProfile({...formProfile, location: { ...formProfile.location!, city: c, type: 'MANUAL' }})} className={`px-4 py-3 rounded-xl text-[10px] border transition-all ${formProfile.location?.city === c ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-white/5 border-white/5 text-gray-500'}`}>{c}</button>
-                  ))}
-                </div>
+                <button onClick={() => navigator.geolocation.getCurrentPosition(pos => setFormProfile({...formProfile, location: { lat: pos.coords.latitude, lng: pos.coords.longitude, city: 'Localizado', type: 'GPS' }}))} className="w-full p-6 bg-indigo-600/10 border border-indigo-500/20 rounded-3xl text-indigo-400 flex items-center justify-center gap-4"><LocateFixed size={24} /> Ativar GPS Noir</button>
+                <div className="grid grid-cols-2 gap-2">{TRAVEL_CITIES.map(c => (<button key={c} onClick={() => setFormProfile({...formProfile, location: { ...formProfile.location!, city: c, type: 'MANUAL' }})} className={`px-4 py-3 rounded-xl text-[10px] border transition-all ${formProfile.location?.city === c ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-white/5 border-white/5 text-gray-500'}`}>{c}</button>))}</div>
+                <Button fullWidth onClick={() => setOnboardingStep(3)}>Próximo</Button>
+              </div>
+            )}
+            {onboardingStep === 3 && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-right">
+                <h2 className="text-2xl font-serif italic text-white">Seus Objetivos</h2>
+                <SelectionChips options={Object.values(Objective)} value={formProfile.objectives} onChange={(v: any) => setFormProfile({...formProfile, objectives: v})} multiple />
+                <Button fullWidth onClick={() => setOnboardingStep(4)}>Próximo</Button>
+              </div>
+            )}
+            {onboardingStep === 4 && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-right">
+                <h2 className="text-2xl font-serif italic text-white">Sua Frequência</h2>
+                <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Música</p>
+                <SelectionChips options={OPTIONS.music} value={formProfile.music} onChange={(v: any) => setFormProfile({...formProfile, music: v})} multiple />
+                <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Interesses</p>
+                <SelectionChips options={OPTIONS.sports} value={formProfile.interests} onChange={(v: any) => setFormProfile({...formProfile, interests: v})} multiple />
+                <Button fullWidth onClick={() => setOnboardingStep(5)}>Próximo</Button>
+              </div>
+            )}
+            {onboardingStep === 5 && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-right">
+                <h2 className="text-2xl font-serif italic text-white">Seu Manifesto</h2>
+                <textarea className="w-full bg-white/[0.03] border border-white/10 rounded-[2rem] p-6 text-sm text-white focus:outline-none italic leading-relaxed" placeholder="Como você se descreve?" value={formProfile.bio} rows={6} onChange={(e) => setFormProfile({...formProfile, bio: e.target.value})} />
                 <Button fullWidth onClick={() => setOnboardingStep(6)}>Próximo</Button>
               </div>
             )}
             {onboardingStep === 6 && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-right duration-500">
-                <h2 className="text-2xl font-serif italic text-white">Seu Manifesto</h2>
-                <textarea className="w-full bg-white/[0.03] border border-white/10 rounded-[2rem] p-6 text-sm text-white focus:outline-none transition-all italic leading-relaxed" placeholder="Como você se descreve no Véu?" value={formProfile.bio} rows={6} onChange={(e) => setFormProfile({...formProfile, bio: e.target.value})} />
-                <Button fullWidth onClick={() => handleSaveProfile(false)}>Confirmar Iniciação</Button>
+              <div className="space-y-6 animate-in fade-in slide-in-from-right">
+                <h2 className="text-2xl font-serif italic text-white">Sua Galeria</h2>
+                <input type="file" hidden ref={fileInputRef} onChange={(e) => { const r = new FileReader(); r.onload = (ev) => setFormProfile({...formProfile, photos: [...(formProfile.photos || []), ev.target?.result as string]}); r.readAsDataURL(e.target.files![0]); }} accept="image/*" />
+                <div className="grid grid-cols-2 gap-4">
+                  {(formProfile.photos || []).map((p, i) => (<div key={i} className="aspect-[3/4] rounded-2xl overflow-hidden relative shadow-lg"><img src={p} className="w-full h-full object-cover" /><button onClick={() => setFormProfile({...formProfile, photos: formProfile.photos?.filter((_, idx) => idx !== i)})} className="absolute top-2 right-2 bg-black/60 p-2 rounded-full text-white"><X size={14}/></button></div>))}
+                  {(formProfile.photos?.length || 0) < 3 && <button onClick={() => fileInputRef.current?.click()} className="aspect-[3/4] rounded-2xl border-2 border-dashed border-white/10 flex items-center justify-center bg-white/5"><Camera size={32} /></button>}
+                </div>
+                <Button fullWidth onClick={() => handleSaveProfile(false)}>Concluir Iniciação</Button>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Discovery / Radar */}
+      {currentPage === AppState.SIGNUP && (
+        <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-12 animate-in fade-in">
+          <ShieldCheck size={80} className="text-indigo-500 animate-pulse" />
+          <h3 className="text-4xl font-serif italic text-white">Pacto de Silêncio</h3>
+          <p className="text-xs text-gray-500 italic">"O que acontece no Véu, permanece no Véu."</p>
+          <Button fullWidth onClick={() => setCurrentPage(AppState.DISCOVER)}>Entrar na Sociedade</Button>
+        </div>
+      )}
+
       {currentPage === AppState.DISCOVER && (
         <div className="flex-1 flex flex-col h-full relative overflow-hidden">
           <Header title={currentUser?.location?.city || 'Velum'} rightElement={<button onClick={() => setIsTravelModeOpen(true)} className="p-3 bg-white/5 rounded-2xl text-indigo-400 border border-white/10"><Globe size={20}/></button>} />
@@ -387,7 +334,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Chat / Sussurros */}
       {currentPage === AppState.CHAT && selectedPartner && (
         <div className="flex-1 flex flex-col h-full overflow-hidden">
           <Header title={selectedPartner.name} onBack={() => setCurrentPage(AppState.DISCOVER)} />
@@ -406,7 +352,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Profile / Identidade */}
       {currentPage === AppState.PROFILE && (
         <div className="flex-1 flex flex-col h-full overflow-hidden">
           <Header title="Identidade Noir" />
