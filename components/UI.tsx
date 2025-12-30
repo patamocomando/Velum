@@ -56,15 +56,15 @@ export const Badge: React.FC<{ children: React.ReactNode; active?: boolean }> = 
 );
 
 export const Header: React.FC<{ title: string; onBack?: () => void; rightElement?: React.ReactNode }> = ({ title, onBack, rightElement }) => (
-  <div className="flex items-center justify-between px-6 pt-12 pb-6 sticky top-0 bg-[#070708]/80 backdrop-blur-lg z-50">
-    <div className="flex items-center gap-4">
+  <div className="flex items-center justify-between px-6 pt-8 pb-4 sticky top-0 bg-[#070708]/90 backdrop-blur-lg z-50 safe-area-top border-b border-white/5">
+    <div className="flex items-center gap-3">
       {onBack && (
-        <button onClick={onBack} className="w-11 h-11 flex items-center justify-center bg-white/[0.03] border border-white/10 rounded-xl text-white hover:bg-white/10 transition-all active:scale-90">
-          <ChevronLeft size={18} />
+        <button onClick={onBack} className="w-10 h-10 flex items-center justify-center bg-white/[0.03] border border-white/10 rounded-xl text-white hover:bg-white/10 transition-all active:scale-90">
+          <ChevronLeft size={16} />
         </button>
       )}
-      <h1 className="font-serif italic text-2xl tracking-tight text-white">{title}</h1>
+      <h1 className="font-serif italic text-xl tracking-tight text-white">{title}</h1>
     </div>
-    {rightElement && <div className="flex items-center gap-3">{rightElement}</div>}
+    {rightElement && <div className="flex items-center gap-2">{rightElement}</div>}
   </div>
 );

@@ -15,11 +15,11 @@
     <link rel="manifest" href="/manifest.json">
     <link rel="apple-touch-icon" href="https://api.dicebear.com/7.x/initials/svg?seed=Velum&backgroundColor=4f46e5&fontFamily=Playfair+Display&fontSize=40">
     
-    <title>VELUM</title>
+    <title>VELUM - Noir Society</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
     <style>
       :root {
         --sat: env(safe-area-inset-top);
@@ -31,7 +31,7 @@
         font-family: 'Inter', sans-serif;
         margin: 0;
         padding: 0;
-        overflow: hidden; /* Fixa a tela para evitar scroll elástico */
+        overflow: hidden;
         -webkit-tap-highlight-color: transparent;
         user-select: none;
         height: 100vh;
@@ -49,10 +49,25 @@
       .no-scrollbar::-webkit-scrollbar {
         display: none;
       }
-      /* Animação de Swipe */
-      .card-stack {
-        perspective: 1000px;
-        transform-style: preserve-3d;
+      .safe-area-bottom {
+        padding-bottom: var(--sab);
+      }
+      .safe-area-top {
+        padding-top: var(--sat);
+      }
+      
+      /* Animações suaves */
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      .animate-fade-in {
+        animation: fadeIn 0.5s ease-out;
+      }
+
+      /* Estilo mobile scroll fix */
+      * {
+        touch-action: manipulation;
       }
     </style>
     <script type="importmap">

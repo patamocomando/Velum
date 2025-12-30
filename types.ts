@@ -31,6 +31,7 @@ export enum AppState {
   DISCOVER = 'DISCOVER',
   CHAT_LIST = 'CHAT_LIST',
   CHAT = 'CHAT',
+  VIEW_PARTNER = 'VIEW_PARTNER',
   PROFILE = 'PROFILE',
   EDIT_PROFILE = 'EDIT_PROFILE',
   VAULT = 'VAULT'
@@ -47,11 +48,12 @@ export interface UserLocation {
 export interface Profile {
   uid: string;
   username: string;
+  phone: string; // Login principal
   email: string;
   name: string;
   age: number;
   gender: Gender;
-  seeking: Gender[]; // Novo campo para filtros
+  seeking: Gender[];
   bio: string;
   objectives: Objective[];
   mood: Mood;
