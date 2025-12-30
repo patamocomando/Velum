@@ -26,7 +26,7 @@ import { MOCK_PROFILES, TRAVEL_CITIES, OPTIONS } from './constants';
 import { generateId, calculateDistance } from './utils';
 import { Button, Input, Card, Badge, Header } from './components/UI';
 
-// Configuração Firebase
+// Configuração Firebase - Substitua pelas suas chaves reais caso necessário
 const firebaseConfig = {
   apiKey: "AIzaSy_VELUM_REAL_KEY_HERE", 
   authDomain: "velum-noir.firebaseapp.com",
@@ -60,6 +60,7 @@ const compressImage = (base64Str: string): Promise<string> => {
       ctx?.drawImage(img, 0, 0, width, height);
       resolve(canvas.toDataURL('image/jpeg', 0.6));
     };
+    img.onerror = () => resolve(base64Str);
   });
 };
 
@@ -73,7 +74,7 @@ const App: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState(''); 
   const [showPassword, setShowPassword] = useState(false);
   
-  // Persistência temporária da senha durante onboarding
+  // Persistência da senha para o fluxo de cadastro
   const [onboardingPassword, setOnboardingPassword] = useState('');
   
   const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
@@ -81,7 +82,7 @@ const App: React.FC = () => {
   
   const [onboardingStep, setOnboardingStep] = useState(1);
   const [formProfile, setFormProfile] = useState<Partial<Profile>>({
-    photos: [], vaultPhotos: [], seeking: [], objectives: [], bio: '', age: undefined, music: [], environment: [], interests: [],
+    photos: [], vaultPhotos: [], seeking: [], objectives: [], bio: '', age: undefined, music: [], interests: [],
     location: { lat: -7.1195, lng: -34.8450, city: 'João Pessoa', type: 'GPS' },
     mood: Mood.CONVERSA
   });
@@ -130,22 +131,30 @@ const App: React.FC = () => {
   }, [selectedPartner, currentUser, currentPage]);
 
   const handleAuth = async () => {
-    if (!loginPhone || !loginPassword) return alert("Credenciais obrigatórias.");
+    if (!loginPhone || !loginPassword) return alert("Preencha todos os campos.");
+    setIsLoading(true);
 
-    if (isSignupMode) {
-      try {
+    try {
+      if (isSignupMode) {
         const q = query(collection(db, "profiles"), where("phone", "==", loginPhone));
         const checkSnapshot = await getDocs(q);
-        if (!checkSnapshot.empty) return alert("Este número já está registrado.");
+        if (!checkSnapshot.empty) {
+          setIsLoading(false);
+          return alert("Este número já está registrado na Noir Society.");
+        }
 
         const newUid = generateId();
-        setFormProfile(p => ({ ...p, uid: newUid, phone: loginPhone, name: loginRealName || 'Membro Noir' }));
-        setOnboardingPassword(loginPassword); // Armazena senha no estado
+        setFormProfile(p => ({ 
+          ...p, 
+          uid: newUid, 
+          phone: loginPhone, 
+          name: loginRealName || 'Membro Noir',
+          username: loginRealName?.toLowerCase().replace(/\s/g, '_') || `noir_${newUid}`
+        }));
+        setOnboardingPassword(loginPassword);
         setOnboardingStep(1);
         setCurrentPage(AppState.ONBOARDING);
-      } catch (e) { alert("Erro ao verificar cadastro."); }
-    } else {
-      try {
+      } else {
         const q = query(collection(db, "profiles"), where("phone", "==", loginPhone));
         const querySnapshot = await getDocs(q);
         let found = false;
@@ -159,38 +168,53 @@ const App: React.FC = () => {
           }
         });
         if (!found) alert("Acesso negado. Telefone ou senha incorretos.");
-      } catch (e) { alert("Erro na autenticação."); }
+      }
+    } catch (e) { 
+      alert("Erro de conexão com o banco de dados.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleSaveProfile = async (isEdit: boolean, updatedData?: Partial<Profile>) => {
     const profileBase = isEdit ? currentUser : formProfile;
-    if (!profileBase?.uid) return alert("Erro: Identificação não encontrada.");
+    if (!profileBase?.uid) return alert("Erro crítico: Dados de identificação ausentes.");
 
     setIsLoading(true);
-    // Crucial: Garante que a senha correta seja enviada ao Firestore
     const passwordToSave = isEdit ? (currentUser as any).password : onboardingPassword;
 
+    // Higienização de dados (Firestore não aceita undefined)
     const finalProfile = {
-      ...profileBase,
-      ...updatedData,
+      uid: profileBase.uid,
+      phone: profileBase.phone || loginPhone,
       password: passwordToSave,
-      updatedAt: Date.now(),
-      photos: profileBase.photos || [],
+      name: profileBase.name || 'Membro',
+      username: profileBase.username || `noir_${profileBase.uid}`,
+      email: profileBase.email || '',
+      age: profileBase.age || 18,
+      // Fixed: changed Gender.SOLO to Gender.HOMEM as SOLO belongs to Objective enum
+      gender: (profileBase.gender as Gender) || Gender.HOMEM,
       seeking: profileBase.seeking || [],
+      bio: profileBase.bio || '',
       objectives: profileBase.objectives || [],
+      mood: profileBase.mood || Mood.CONVERSA,
+      isPrivate: profileBase.isPrivate ?? true,
+      photos: profileBase.photos || [],
+      vaultPhotos: profileBase.vaultPhotos || [],
       interests: profileBase.interests || [],
       location: {
-        ...profileBase.location,
-        lat: profileBase.location?.lat || 0,
-        lng: profileBase.location?.lng || 0,
-        city: profileBase.location?.city || 'Desconhecido'
-      }
-    } as Profile;
+        lat: profileBase.location?.lat || -7.1195,
+        lng: profileBase.location?.lng || -34.8450,
+        city: profileBase.location?.city || 'João Pessoa',
+        type: profileBase.location?.type || 'MANUAL'
+      },
+      updatedAt: Date.now()
+    };
 
     try {
       await setDoc(doc(db, "profiles", finalProfile.uid), finalProfile);
-      setCurrentUser(finalProfile);
+      // Fixed: finalProfile now contains missing properties email and isPrivate
+      setCurrentUser(finalProfile as unknown as Profile);
       if (isEdit) {
         setCurrentPage(AppState.PROFILE);
       } else {
@@ -198,8 +222,8 @@ const App: React.FC = () => {
         setCurrentPage(AppState.SIGNUP);
       }
     } catch (e) {
-      console.error(e);
-      alert("Erro ao salvar perfil. Tente fotos menores.");
+      console.error("Firestore Error:", e);
+      alert("Falha ao sincronizar. Certifique-se de que as fotos não são muito grandes.");
     } finally {
       setIsLoading(false);
     }
@@ -260,7 +284,12 @@ const App: React.FC = () => {
     </nav>
   );
 
-  if (isLoading) return <div className="h-full w-full bg-[#070708] flex flex-col items-center justify-center font-serif italic text-white animate-pulse">VELUM</div>;
+  if (isLoading) return (
+    <div className="h-full w-full bg-[#070708] flex flex-col items-center justify-center font-serif italic text-white animate-pulse">
+      <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+      VELUM
+    </div>
+  );
 
   return (
     <div className="flex flex-col h-full w-full max-w-md mx-auto bg-[#070708] overflow-hidden relative">
@@ -321,7 +350,7 @@ const App: React.FC = () => {
             {onboardingStep === 4 && (
               <div className="space-y-6 animate-in fade-in slide-in-from-right">
                 <h2 className="text-2xl font-serif italic text-white">Sua Frequência</h2>
-                <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Música Favorita</p>
+                <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Música</p>
                 <SelectionChips options={OPTIONS.music} value={formProfile.music} onChange={(v: any) => setFormProfile({...formProfile, music: v})} multiple />
                 <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Interesses</p>
                 <SelectionChips options={OPTIONS.sports} value={formProfile.interests} onChange={(v: any) => setFormProfile({...formProfile, interests: v})} multiple />
@@ -331,14 +360,13 @@ const App: React.FC = () => {
             {onboardingStep === 5 && (
               <div className="space-y-6 animate-in fade-in slide-in-from-right">
                 <h2 className="text-2xl font-serif italic text-white">Seu Manifesto</h2>
-                <textarea className="w-full bg-white/[0.03] border border-white/10 rounded-[2rem] p-6 text-sm text-white focus:outline-none italic leading-relaxed" placeholder="Como você se descreve no Véu?" value={formProfile.bio} rows={6} onChange={(e) => setFormProfile({...formProfile, bio: e.target.value})} />
+                <textarea className="w-full bg-white/[0.03] border border-white/10 rounded-[2rem] p-6 text-sm text-white focus:outline-none italic leading-relaxed" placeholder="Se descreva no Véu..." value={formProfile.bio} rows={6} onChange={(e) => setFormProfile({...formProfile, bio: e.target.value})} />
                 <Button fullWidth onClick={() => setOnboardingStep(6)}>Próximo</Button>
               </div>
             )}
             {onboardingStep === 6 && (
               <div className="space-y-6 animate-in fade-in slide-in-from-right">
                 <h2 className="text-2xl font-serif italic text-white">Sua Galeria</h2>
-                <p className="text-xs text-gray-500 italic">Fotos pesadas serão comprimidas automaticamente.</p>
                 <input type="file" hidden ref={fileInputRef} onChange={handlePhotoUpload} accept="image/*" />
                 <div className="grid grid-cols-2 gap-4">
                   {(formProfile.photos || []).map((p, i) => (<div key={i} className="aspect-[3/4] rounded-2xl overflow-hidden relative shadow-lg"><img src={p} className="w-full h-full object-cover" /><button onClick={() => setFormProfile({...formProfile, photos: formProfile.photos?.filter((_, idx) => idx !== i)})} className="absolute top-2 right-2 bg-black/60 p-2 rounded-full text-white"><X size={14}/></button></div>))}
@@ -355,7 +383,7 @@ const App: React.FC = () => {
         <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-12 animate-in fade-in">
           <ShieldCheck size={80} className="text-indigo-500 animate-pulse" />
           <h3 className="text-4xl font-serif italic text-white">Pacto de Silêncio</h3>
-          <p className="text-xs text-gray-500 italic">Identidade sincronizada com sucesso.</p>
+          <p className="text-xs text-gray-500 italic">Sua identidade foi criada e sincronizada.</p>
           <Button fullWidth onClick={() => setCurrentPage(AppState.DISCOVER)}>Entrar na Sociedade</Button>
         </div>
       )}
