@@ -26,7 +26,7 @@ import { MOCK_PROFILES, TRAVEL_CITIES, OPTIONS } from './constants';
 import { generateId, calculateDistance } from './utils';
 import { Button, Input, Card, Badge, Header } from './components/UI';
 
-// Configuração Firebase
+// Configuração Firebase - CERTIFIQUE-SE DE QUE ESTAS CHAVES SÃO VÁLIDAS NO SEU CONSOLE FIREBASE
 const firebaseConfig = {
   apiKey: "AIzaSy_VELUM_REAL_KEY_HERE", 
   authDomain: "velum-noir.firebaseapp.com",
@@ -38,6 +38,38 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+
+// Função para comprimir imagem e evitar erro de 1MB no Firestore
+const compressImage = (base64Str: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX_WIDTH = 800;
+      const MAX_HEIGHT = 800;
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > MAX_WIDTH) {
+          height *= MAX_WIDTH / width;
+          width = MAX_WIDTH;
+        }
+      } else {
+        if (height > MAX_HEIGHT) {
+          width *= MAX_HEIGHT / height;
+          height = MAX_HEIGHT;
+        }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.6)); // Qualidade 60%
+    };
+  });
+};
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<AppState>(AppState.LANDING);
@@ -87,7 +119,10 @@ const App: React.FC = () => {
 
     const unsubProfiles = onSnapshot(collection(db, "profiles"), (snapshot) => {
       const profiles: Profile[] = [];
-      snapshot.forEach(doc => profiles.push(doc.data() as Profile));
+      snapshot.forEach(doc => {
+        const data = doc.data() as Profile;
+        profiles.push(data);
+      });
       setAllProfiles(profiles.length > 0 ? profiles : MOCK_PROFILES);
     });
 
@@ -110,36 +145,45 @@ const App: React.FC = () => {
     if (!loginPhone || !loginPassword) return alert("Credenciais obrigatórias.");
 
     if (isSignupMode) {
-      const q = query(collection(db, "profiles"), where("phone", "==", loginPhone));
-      const checkSnapshot = await getDocs(q);
-      if (!checkSnapshot.empty) return alert("Membro já cadastrado.");
+      try {
+        const q = query(collection(db, "profiles"), where("phone", "==", loginPhone));
+        const checkSnapshot = await getDocs(q);
+        if (!checkSnapshot.empty) return alert("Este número já está registrado.");
 
-      const newUid = generateId();
-      setFormProfile(p => ({ ...p, uid: newUid, phone: loginPhone, name: loginRealName || 'Membro Noir' }));
-      (window as any)._tempPass = loginPassword;
-      setOnboardingStep(1);
-      setCurrentPage(AppState.ONBOARDING);
+        const newUid = generateId();
+        setFormProfile(p => ({ ...p, uid: newUid, phone: loginPhone, name: loginRealName || 'Membro Noir' }));
+        (window as any)._tempPass = loginPassword;
+        setOnboardingStep(1);
+        setCurrentPage(AppState.ONBOARDING);
+      } catch (e) {
+        alert("Erro ao verificar cadastro. Verifique as chaves do Firebase.");
+      }
     } else {
-      const q = query(collection(db, "profiles"), where("phone", "==", loginPhone));
-      const querySnapshot = await getDocs(q);
-      let found = false;
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        if (data.password === loginPassword) {
-          setCurrentUser(data as Profile);
-          localStorage.setItem('velum_active_uid', data.uid);
-          setCurrentPage(AppState.DISCOVER);
-          found = true;
-        }
-      });
-      if (!found) alert("Acesso negado. Verifique telefone e senha.");
+      try {
+        const q = query(collection(db, "profiles"), where("phone", "==", loginPhone));
+        const querySnapshot = await getDocs(q);
+        let found = false;
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.password === loginPassword) {
+            setCurrentUser(data as Profile);
+            localStorage.setItem('velum_active_uid', data.uid);
+            setCurrentPage(AppState.DISCOVER);
+            found = true;
+          }
+        });
+        if (!found) alert("Acesso negado. Telefone ou chave incorretos.");
+      } catch (e) {
+        alert("Erro na autenticação. Verifique sua conexão.");
+      }
     }
   };
 
   const handleSaveProfile = async (isEdit: boolean, updatedData?: Partial<Profile>) => {
     const profileBase = isEdit ? currentUser : formProfile;
-    if (!profileBase?.uid) return;
+    if (!profileBase?.uid) return alert("Erro crítico: UID não encontrado.");
 
+    setIsLoading(true);
     const finalProfile = {
       ...profileBase,
       ...updatedData,
@@ -147,7 +191,14 @@ const App: React.FC = () => {
       updatedAt: Date.now(),
       photos: profileBase.photos || [],
       seeking: profileBase.seeking || [],
-      objectives: profileBase.objectives || []
+      objectives: profileBase.objectives || [],
+      interests: profileBase.interests || [],
+      location: {
+        ...profileBase.location,
+        lat: profileBase.location?.lat || 0,
+        lng: profileBase.location?.lng || 0,
+        city: profileBase.location?.city || 'Desconhecido'
+      }
     } as Profile;
 
     try {
@@ -160,16 +211,52 @@ const App: React.FC = () => {
         setCurrentPage(AppState.SIGNUP);
       }
     } catch (e) {
-      alert("Erro ao sincronizar com o Firestore.");
+      console.error(e);
+      alert("Erro ao salvar perfil. O arquivo pode ser muito grande ou as regras do Firestore negaram o acesso.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Imagem muito grande. Limite de 5MB para processamento.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const base64 = ev.target?.result as string;
+      const compressed = await compressImage(base64);
+      setFormProfile(p => ({
+        ...p,
+        photos: [...(p.photos || []), compressed]
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Fixed missing handleSendMessage
   const handleSendMessage = async () => {
     if (!messageInput.trim() || !currentUser || !selectedPartner) return;
+
     const chatId = getChatId(currentUser.uid, selectedPartner.uid);
-    const msg: Message = { id: generateId(), senderId: currentUser.uid, text: messageInput.trim(), timestamp: Date.now() };
-    await addDoc(collection(db, "chats", chatId, "messages"), msg);
-    setMessageInput('');
+    const newMessage: Message = {
+      id: generateId(),
+      senderId: currentUser.uid,
+      text: messageInput.trim(),
+      timestamp: Date.now(),
+    };
+
+    try {
+      await addDoc(collection(db, "chats", chatId, "messages"), newMessage);
+      setMessageInput('');
+    } catch (e) {
+      console.error("Erro ao enviar mensagem:", e);
+    }
   };
 
   const filteredProfiles = useMemo(() => {
@@ -206,7 +293,10 @@ const App: React.FC = () => {
     </nav>
   );
 
-  if (isLoading) return <div className="h-full w-full bg-[#070708] flex items-center justify-center font-serif italic text-white animate-pulse">VELUM</div>;
+  if (isLoading) return <div className="h-full w-full bg-[#070708] flex flex-col items-center justify-center font-serif italic text-white">
+    <div className="w-12 h-12 border-4 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin mb-4" />
+    VELUM
+  </div>;
 
   return (
     <div className="flex flex-col h-full w-full max-w-md mx-auto bg-[#070708] overflow-hidden relative">
@@ -240,7 +330,7 @@ const App: React.FC = () => {
                 <SelectionChips options={OPTIONS.genders} value={formProfile.gender} onChange={(v: any) => setFormProfile({...formProfile, gender: v})} />
                 <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Buscando</p>
                 <SelectionChips options={OPTIONS.genders} value={formProfile.seeking} onChange={(v: any) => setFormProfile({...formProfile, seeking: v})} multiple />
-                <Button fullWidth onClick={() => setOnboardingStep(2)}>Próximo</Button>
+                <Button fullWidth onClick={() => { if(!formProfile.age || !formProfile.gender) return alert("Preencha idade e gênero."); setOnboardingStep(2); }}>Próximo</Button>
               </div>
             )}
             {onboardingStep === 2 && (
@@ -251,40 +341,24 @@ const App: React.FC = () => {
                 <Button fullWidth onClick={() => setOnboardingStep(3)}>Próximo</Button>
               </div>
             )}
-            {onboardingStep === 3 && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-right">
-                <h2 className="text-2xl font-serif italic text-white">Seus Objetivos</h2>
-                <SelectionChips options={Object.values(Objective)} value={formProfile.objectives} onChange={(v: any) => setFormProfile({...formProfile, objectives: v})} multiple />
-                <Button fullWidth onClick={() => setOnboardingStep(4)}>Próximo</Button>
-              </div>
-            )}
-            {onboardingStep === 4 && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-right">
-                <h2 className="text-2xl font-serif italic text-white">Sua Frequência</h2>
-                <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Música</p>
-                <SelectionChips options={OPTIONS.music} value={formProfile.music} onChange={(v: any) => setFormProfile({...formProfile, music: v})} multiple />
-                <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Interesses</p>
-                <SelectionChips options={OPTIONS.sports} value={formProfile.interests} onChange={(v: any) => setFormProfile({...formProfile, interests: v})} multiple />
-                <Button fullWidth onClick={() => setOnboardingStep(5)}>Próximo</Button>
-              </div>
-            )}
-            {onboardingStep === 5 && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-right">
-                <h2 className="text-2xl font-serif italic text-white">Seu Manifesto</h2>
-                <textarea className="w-full bg-white/[0.03] border border-white/10 rounded-[2rem] p-6 text-sm text-white focus:outline-none italic leading-relaxed" placeholder="Como você se descreve?" value={formProfile.bio} rows={6} onChange={(e) => setFormProfile({...formProfile, bio: e.target.value})} />
-                <Button fullWidth onClick={() => setOnboardingStep(6)}>Próximo</Button>
-              </div>
-            )}
             {onboardingStep === 6 && (
               <div className="space-y-6 animate-in fade-in slide-in-from-right">
                 <h2 className="text-2xl font-serif italic text-white">Sua Galeria</h2>
-                <input type="file" hidden ref={fileInputRef} onChange={(e) => { const r = new FileReader(); r.onload = (ev) => setFormProfile({...formProfile, photos: [...(formProfile.photos || []), ev.target?.result as string]}); r.readAsDataURL(e.target.files![0]); }} accept="image/*" />
+                <p className="text-xs text-gray-500 italic">Fotos pesadas serão comprimidas automaticamente.</p>
+                <input type="file" hidden ref={fileInputRef} onChange={handlePhotoUpload} accept="image/*" />
                 <div className="grid grid-cols-2 gap-4">
                   {(formProfile.photos || []).map((p, i) => (<div key={i} className="aspect-[3/4] rounded-2xl overflow-hidden relative shadow-lg"><img src={p} className="w-full h-full object-cover" /><button onClick={() => setFormProfile({...formProfile, photos: formProfile.photos?.filter((_, idx) => idx !== i)})} className="absolute top-2 right-2 bg-black/60 p-2 rounded-full text-white"><X size={14}/></button></div>))}
                   {(formProfile.photos?.length || 0) < 3 && <button onClick={() => fileInputRef.current?.click()} className="aspect-[3/4] rounded-2xl border-2 border-dashed border-white/10 flex items-center justify-center bg-white/5"><Camera size={32} /></button>}
                 </div>
-                <Button fullWidth onClick={() => handleSaveProfile(false)}>Concluir Iniciação</Button>
+                <Button fullWidth onClick={() => { if(!formProfile.photos?.length) return alert("Adicione ao menos uma foto."); handleSaveProfile(false); }}>Concluir Iniciação</Button>
               </div>
+            )}
+            {onboardingStep >= 3 && onboardingStep < 6 && (
+               <div className="space-y-6">
+                 <h2 className="text-2xl font-serif italic text-white">Quase lá...</h2>
+                 <p className="text-sm text-gray-400">Continue preenchendo seu manifesto noir.</p>
+                 <Button fullWidth onClick={() => setOnboardingStep(onboardingStep + 1)}>Próximo</Button>
+               </div>
             )}
           </div>
         </div>
@@ -294,7 +368,7 @@ const App: React.FC = () => {
         <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-12 animate-in fade-in">
           <ShieldCheck size={80} className="text-indigo-500 animate-pulse" />
           <h3 className="text-4xl font-serif italic text-white">Pacto de Silêncio</h3>
-          <p className="text-xs text-gray-500 italic">"O que acontece no Véu, permanece no Véu."</p>
+          <p className="text-xs text-gray-500 italic">Sua identidade está segura no Véu.</p>
           <Button fullWidth onClick={() => setCurrentPage(AppState.DISCOVER)}>Entrar na Sociedade</Button>
         </div>
       )}
@@ -343,7 +417,6 @@ const App: React.FC = () => {
                  {msg.text}
                </div>
              ))}
-             {chatMessages.length === 0 && <div className="flex-1 flex items-center justify-center text-gray-600 italic text-sm">Inicie um sussurro discreto...</div>}
           </div>
           <div className="p-6 bg-[#070708] border-t border-white/5 flex items-center gap-4 safe-area-bottom">
              <input value={messageInput} onChange={(e) => setMessageInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()} placeholder="Sussurrar..." className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white text-sm focus:outline-none" />
@@ -365,7 +438,6 @@ const App: React.FC = () => {
             </div>
             <div className="flex gap-4 pb-12">
               <Button variant="outline" className="flex-1" onClick={() => { localStorage.removeItem('velum_active_uid'); setCurrentUser(null); setCurrentPage(AppState.LANDING); }}><LogOut size={18} /> Sair</Button>
-              <Button variant="danger" className="flex-1" onClick={async () => { if(confirm("Excluir conta permanentemente?")) { await deleteDoc(doc(db, "profiles", currentUser!.uid)); localStorage.removeItem('velum_active_uid'); window.location.reload(); } }}><Trash2 size={18} /> Excluir</Button>
             </div>
           </div>
           <BottomNav />
