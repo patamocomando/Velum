@@ -137,7 +137,6 @@ const App: React.FC = () => {
     let passwordToStore = (window as any)._tempPass;
     const allAccountsBefore = JSON.parse(localStorage.getItem('velum_accounts') || '{}');
     
-    // Preserve password if it exists
     if (isEdit && allAccountsBefore[finalProfile.uid]) {
       passwordToStore = allAccountsBefore[finalProfile.uid].password;
     }
@@ -325,18 +324,40 @@ const App: React.FC = () => {
     }));
   };
 
+  // Lógica de descoberta corrigida para incluir usuários reais salvos
   const filteredProfiles = useMemo(() => {
     if (!currentUser) return [];
-    let list = [...MOCK_PROFILES];
+    
+    // Carrega usuários reais do localStorage
+    const allAccounts = JSON.parse(localStorage.getItem('velum_accounts') || '{}');
+    const realUsers = Object.values(allAccounts) as Profile[];
+    
+    // Une mock com reais e remove duplicatas por UID (priorizando o usuário real editado)
+    const combined = [...realUsers, ...MOCK_PROFILES];
+    const uniqueMap = new Map();
+    combined.forEach(p => {
+      if (!uniqueMap.has(p.uid)) uniqueMap.set(p.uid, p);
+    });
+    
+    // Filtra para remover o próprio usuário logado
+    let list = Array.from(uniqueMap.values()).filter(p => p.uid !== currentUser.uid);
+
+    // Filtro de Orientação (Seeking)
     if (currentUser.seeking?.length) {
       list = list.filter(p => currentUser.seeking.includes(p.gender));
     }
-    const currentCity = currentUser.location?.city || 'João Pessoa';
-    if (currentUser.location.type === 'MANUAL') {
+    
+    // Filtro de Localização (Se estiver em modo manual, filtra pela cidade)
+    const currentCity = currentUser.location?.city;
+    if (currentUser.location.type === 'MANUAL' && currentCity) {
       list = list.filter(p => p.location.city === currentCity);
     }
-    return list.map(p => ({ ...p, distance: calculateDistance(currentUser.location, p.location) }));
-  }, [currentUser]);
+    
+    return list.map(p => ({ 
+      ...p, 
+      distance: calculateDistance(currentUser.location, p.location) 
+    }));
+  }, [currentUser, currentPage]); // Re-calcula ao mudar de página para captar novos cadastros
 
   const tutorialPages = [
     { icon: Sparkles, title: "Descoberta", desc: "Navegue pelos membros da sociedade Noir." },
