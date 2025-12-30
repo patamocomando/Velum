@@ -33,9 +33,9 @@ const App: React.FC = () => {
     seeking: [],
     objectives: [],
     bio: '',
-    age: 18,
-    music: '',
-    environment: '',
+    age: undefined, // Start empty as requested
+    music: [] as any, // Changed to array for multi-select
+    environment: [] as any, // Changed to array for multi-select
     interests: [],
     location: { lat: -7.1195, lng: -34.8450, city: 'João Pessoa', type: 'GPS' }
   });
@@ -105,7 +105,6 @@ const App: React.FC = () => {
       setOnboardingStep(1);
       setCurrentPage(AppState.ONBOARDING);
     } else {
-      // Tentar login pelo telefone e senha no localStorage
       const foundUser = Object.values(allAccounts).find((u: any) => 
         u.phone === loginPhone && u.password === loginPassword
       ) as Profile;
@@ -185,8 +184,7 @@ const App: React.FC = () => {
       setLoginPhone('');
       setLoginPassword('');
       setIsSignupMode(false);
-      // Garantir que a troca de estado force o re-render para LANDING
-      setTimeout(() => setCurrentPage(AppState.LANDING), 100);
+      setCurrentPage(AppState.LANDING);
     }
   };
 
@@ -221,6 +219,7 @@ const App: React.FC = () => {
 
   const requestGPS = () => {
     if ("geolocation" in navigator) {
+      // Prompt logic is implicit in the native call
       navigator.geolocation.getCurrentPosition((pos) => {
         const newLoc = { 
           lat: pos.coords.latitude, 
@@ -231,7 +230,7 @@ const App: React.FC = () => {
         
         if (currentPage === AppState.ONBOARDING) {
           setFormProfile(prev => ({ ...prev, location: newLoc }));
-          alert("GPS Detectado com sucesso.");
+          alert("GPS Autorizado e detectado.");
         } else if (currentUser) {
           const updated = { ...currentUser, location: newLoc };
           handleSaveProfile(true, updated);
@@ -239,11 +238,22 @@ const App: React.FC = () => {
           setCurrentIndex(0);
         }
       }, (err) => {
-        alert("Não foi possível acessar o GPS. Verifique as permissões do seu aparelho.");
-        console.error(err);
+        alert("Permissão de GPS negada. Ative nas configurações do seu aparelho para continuar.");
       });
     } else {
       alert("Seu aparelho não suporta Geolocalização.");
+    }
+  };
+
+  const handlePhotoRequest = (isEdit: boolean, isVault: boolean = false) => {
+    // Reassurance message for privacy
+    const confirmMsg = isVault 
+      ? "O VELUM solicita acesso à sua galeria para salvar fotos exclusivas no Vault Seguro. Suas fotos são criptografadas."
+      : "O VELUM solicita acesso à sua galeria para atualizar seu perfil público.";
+      
+    if (confirm(confirmMsg)) {
+      if (isVault) vaultFileInputRef.current?.click();
+      else fileInputRef.current?.click();
     }
   };
 
@@ -255,7 +265,7 @@ const App: React.FC = () => {
     if (!target) return;
 
     if ((target.photos?.length || 0) >= 3) { 
-      alert("Máximo de 3 fotos públicas."); 
+      alert("Máximo de 3 fotos públicas atingido."); 
       return; 
     }
 
@@ -374,7 +384,7 @@ const App: React.FC = () => {
             key={opt}
             onClick={() => {
               if (multiple) {
-                const arr = value || [];
+                const arr = Array.isArray(value) ? value : [];
                 onChange(arr.includes(opt) ? arr.filter((x: any) => x !== opt) : [...arr, opt]);
               } else onChange(opt);
             }}
@@ -435,7 +445,14 @@ const App: React.FC = () => {
                 <h2 className="text-2xl font-serif italic text-white">Sua Natureza</h2>
                 <div className="space-y-4">
                   <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Idade</p>
-                  <Input type="number" value={formProfile.age} onChange={e => setFormProfile({...formProfile, age: parseInt(e.target.value) || 18})} min={18} max={99} />
+                  <Input 
+                    type="number" 
+                    placeholder="Sua idade"
+                    value={formProfile.age || ''} 
+                    onChange={e => setFormProfile({...formProfile, age: parseInt(e.target.value) || undefined})} 
+                    min={18} 
+                    max={99} 
+                  />
                 </div>
                 <div className="space-y-4">
                   <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Gênero</p>
@@ -443,7 +460,13 @@ const App: React.FC = () => {
                   <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Buscando</p>
                   <SelectionChips options={OPTIONS.genders} value={formProfile.seeking} onChange={(v: any) => setFormProfile({...formProfile, seeking: v})} multiple />
                 </div>
-                <Button fullWidth onClick={() => setOnboardingStep(2)}>Próximo</Button>
+                <Button fullWidth onClick={() => {
+                  if (!formProfile.age || formProfile.age < 18) {
+                    alert("A idade mínima é 18 anos.");
+                    return;
+                  }
+                  setOnboardingStep(2);
+                }}>Próximo</Button>
               </div>
             )}
             {onboardingStep === 2 && (
@@ -503,12 +526,12 @@ const App: React.FC = () => {
               <div className="space-y-6 animate-in fade-in slide-in-from-right duration-500">
                 <h2 className="text-2xl font-serif italic text-white">Sua Frequência</h2>
                 <div className="space-y-4">
-                   <div className="flex items-center gap-2"><Music size={14} className="text-indigo-400" /><p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Música</p></div>
-                   <SelectionChips options={OPTIONS.music} value={formProfile.music} onChange={(v: any) => setFormProfile({...formProfile, music: v})} />
+                   <div className="flex items-center gap-2"><Music size={14} className="text-indigo-400" /><p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Música (Multiseleção)</p></div>
+                   <SelectionChips options={OPTIONS.music} value={formProfile.music} onChange={(v: any) => setFormProfile({...formProfile, music: v})} multiple />
                 </div>
                 <div className="space-y-4">
-                   <div className="flex items-center gap-2"><Smile size={14} className="text-indigo-400" /><p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Vibe</p></div>
-                   <SelectionChips options={OPTIONS.vibes} value={formProfile.environment} onChange={(v: any) => setFormProfile({...formProfile, environment: v})} />
+                   <div className="flex items-center gap-2"><Smile size={14} className="text-indigo-400" /><p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Vibe (Multiseleção)</p></div>
+                   <SelectionChips options={OPTIONS.vibes} value={formProfile.environment} onChange={(v: any) => setFormProfile({...formProfile, environment: v})} multiple />
                 </div>
                 <div className="flex gap-4"><Button variant="outline" className="flex-1" onClick={() => setOnboardingStep(3)}>Voltar</Button><Button className="flex-[2]" onClick={() => setOnboardingStep(5)}>Próximo</Button></div>
               </div>
@@ -526,6 +549,7 @@ const App: React.FC = () => {
             {onboardingStep === 6 && (
               <div className="space-y-6 animate-in fade-in slide-in-from-right duration-500">
                 <h2 className="text-2xl font-serif italic text-white">Sua Galeria</h2>
+                <p className="text-[11px] text-gray-500 italic">O VELUM solicita acesso à galeria para definir suas representações públicas.</p>
                 <input type="file" hidden ref={fileInputRef} onChange={(e) => handlePhotoUpload(e, false)} accept="image/*" />
                 <div className="grid grid-cols-2 gap-4">
                   {(formProfile.photos || []).map((p, i) => (
@@ -534,7 +558,7 @@ const App: React.FC = () => {
                       <button onClick={() => setFormProfile(prev => ({...prev, photos: prev.photos?.filter((_, idx) => idx !== i)}))} className="absolute top-2 right-2 bg-black/60 p-2 rounded-full text-white"><X size={14}/></button>
                     </div>
                   ))}
-                  {(formProfile.photos?.length || 0) < 3 && <button onClick={() => fileInputRef.current?.click()} className="aspect-[3/4] rounded-2xl border-2 border-dashed border-white/10 flex flex-col items-center justify-center text-gray-500 bg-white/5"><Plus size={32} /><span className="text-[10px] mt-2 uppercase font-black tracking-widest">Foto</span></button>}
+                  {(formProfile.photos?.length || 0) < 3 && <button onClick={() => handlePhotoRequest(false)} className="aspect-[3/4] rounded-2xl border-2 border-dashed border-white/10 flex flex-col items-center justify-center text-gray-500 bg-white/5"><Plus size={32} /><span className="text-[10px] mt-2 uppercase font-black tracking-widest">Foto</span></button>}
                 </div>
                 <div className="flex gap-4"><Button variant="outline" className="flex-1" onClick={() => setOnboardingStep(5)}>Voltar</Button><Button className="flex-[2]" onClick={() => handleSaveProfile(false)}>Concluir</Button></div>
               </div>
@@ -787,11 +811,15 @@ const App: React.FC = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="p-6 bg-white/[0.03] border border-white/5 rounded-[2rem] text-center">
                  <h4 className="text-[9px] uppercase tracking-widest text-gray-500 font-black mb-1">Vibe</h4>
-                 <p className="font-serif italic text-lg text-white">{selectedPartner.environment || 'Misterioso'}</p>
+                 <p className="font-serif italic text-lg text-white">
+                    {Array.isArray(selectedPartner.environment) ? selectedPartner.environment[0] : selectedPartner.environment || 'Misterioso'}
+                 </p>
               </div>
               <div className="p-6 bg-white/[0.03] border border-white/5 rounded-[2rem] text-center">
                  <h4 className="text-[9px] uppercase tracking-widest text-gray-500 font-black mb-1">Música</h4>
-                 <p className="font-serif italic text-lg text-white">{selectedPartner.music || 'Deep House'}</p>
+                 <p className="font-serif italic text-lg text-white">
+                    {Array.isArray(selectedPartner.music) ? selectedPartner.music[0] : selectedPartner.music || 'Deep House'}
+                 </p>
               </div>
             </div>
 
@@ -841,6 +869,7 @@ const App: React.FC = () => {
               <Lock size={48} className="mx-auto text-indigo-400 opacity-50" />
               <h3 className="text-xl font-serif italic text-white">Seu Cofre Íntimo</h3>
               <p className="text-xs text-gray-500 italic px-4">Máximo de 2 fotos criptografadas para visualização sob demanda.</p>
+              <p className="text-[9px] text-gray-600 uppercase font-black">Acesso à galeria solicitado ao carregar.</p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -862,7 +891,7 @@ const App: React.FC = () => {
               
               {(currentUser?.vaultPhotos?.length || 0) < 2 && (
                 <button 
-                  onClick={() => vaultFileInputRef.current?.click()}
+                  onClick={() => handlePhotoRequest(true, true)}
                   className="aspect-[3/4] rounded-3xl border-2 border-dashed border-indigo-500/20 bg-indigo-500/5 flex flex-col items-center justify-center text-indigo-400 group active:scale-95 transition-all"
                 >
                   <Plus size={40} className="group-hover:scale-110 transition-transform" />
@@ -909,7 +938,7 @@ const App: React.FC = () => {
                   <ChevronLeft size={16} className="text-indigo-500 rotate-180" />
                </button>
                
-               <div className="flex gap-4">
+               <div className="flex gap-4 pb-12">
                  <Button variant="outline" className="flex-1 border-gray-800 text-gray-400" onClick={handleLogout}>
                    <LogOut size={18} /> Sair
                  </Button>

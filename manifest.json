@@ -6,17 +6,17 @@
   "display": "standalone",
   "background_color": "#070708",
   "theme_color": "#070708",
-  "description": "Premium lifestyle relationship app.",
+  "description": "Premium lifestyle relationship app focused on privacy and exclusivity.",
   "icons": [
     {
-      "src": "https://api.dicebear.com/7.x/initials/png?seed=Velum&backgroundColor=4f46e5&width=192&height=192",
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='48' fill='%23070708'/%3E%3Cpath d='M60 60L96 140L132 60' stroke='%234f46e5' stroke-width='12' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ctext x='96' y='170' font-family='serif' font-size='20' fill='white' text-anchor='middle' font-style='italic'%3EVELUM%3C/text%3E%3C/svg%3E",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/svg+xml"
     },
     {
-      "src": "https://api.dicebear.com/7.x/initials/png?seed=Velum&backgroundColor=4f46e5&width=512&height=512",
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='128' fill='%23070708'/%3E%3Cpath d='M150 150L256 380L362 150' stroke='%234f46e5' stroke-width='30' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ctext x='256' y='460' font-family='serif' font-size='50' fill='white' text-anchor='middle' font-style='italic'%3EVELUM%3C/text%3E%3C/svg%3E",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/svg+xml"
     }
   ]
 }
