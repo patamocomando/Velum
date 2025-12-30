@@ -26,7 +26,7 @@ import { MOCK_PROFILES, TRAVEL_CITIES, OPTIONS } from './constants';
 import { generateId, calculateDistance } from './utils';
 import { Button, Input, Card, Badge, Header } from './components/UI';
 
-// Configuração Firebase - CERTIFIQUE-SE DE QUE ESTAS CHAVES SÃO VÁLIDAS NO SEU CONSOLE FIREBASE
+// Configuração Firebase
 const firebaseConfig = {
   apiKey: "AIzaSy_VELUM_REAL_KEY_HERE", 
   authDomain: "velum-noir.firebaseapp.com",
@@ -39,7 +39,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// Função para comprimir imagem e evitar erro de 1MB no Firestore
 const compressImage = (base64Str: string): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image();
@@ -50,23 +49,16 @@ const compressImage = (base64Str: string): Promise<string> => {
       const MAX_HEIGHT = 800;
       let width = img.width;
       let height = img.height;
-
       if (width > height) {
-        if (width > MAX_WIDTH) {
-          height *= MAX_WIDTH / width;
-          width = MAX_WIDTH;
-        }
+        if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
       } else {
-        if (height > MAX_HEIGHT) {
-          width *= MAX_HEIGHT / height;
-          height = MAX_HEIGHT;
-        }
+        if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
       }
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx?.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.6)); // Qualidade 60%
+      resolve(canvas.toDataURL('image/jpeg', 0.6));
     };
   });
 };
@@ -81,9 +73,11 @@ const App: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState(''); 
   const [showPassword, setShowPassword] = useState(false);
   
+  // Persistência temporária da senha durante onboarding
+  const [onboardingPassword, setOnboardingPassword] = useState('');
+  
   const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isTravelModeOpen, setIsTravelModeOpen] = useState(false);
   
   const [onboardingStep, setOnboardingStep] = useState(1);
   const [formProfile, setFormProfile] = useState<Partial<Profile>>({
@@ -97,7 +91,6 @@ const App: React.FC = () => {
   const [messageInput, setMessageInput] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-
   const getChatId = (id1: string, id2: string) => [id1, id2].sort().join('_');
 
   useEffect(() => {
@@ -110,19 +103,14 @@ const App: React.FC = () => {
             setCurrentUser(userDoc.data() as Profile);
             setCurrentPage(AppState.DISCOVER);
           }
-        } catch (e) {
-          console.error("Erro na sessão:", e);
-        }
+        } catch (e) { console.error("Erro na sessão:", e); }
       }
       setIsLoading(false);
     };
 
     const unsubProfiles = onSnapshot(collection(db, "profiles"), (snapshot) => {
       const profiles: Profile[] = [];
-      snapshot.forEach(doc => {
-        const data = doc.data() as Profile;
-        profiles.push(data);
-      });
+      snapshot.forEach(doc => profiles.push(doc.data() as Profile));
       setAllProfiles(profiles.length > 0 ? profiles : MOCK_PROFILES);
     });
 
@@ -152,12 +140,10 @@ const App: React.FC = () => {
 
         const newUid = generateId();
         setFormProfile(p => ({ ...p, uid: newUid, phone: loginPhone, name: loginRealName || 'Membro Noir' }));
-        (window as any)._tempPass = loginPassword;
+        setOnboardingPassword(loginPassword); // Armazena senha no estado
         setOnboardingStep(1);
         setCurrentPage(AppState.ONBOARDING);
-      } catch (e) {
-        alert("Erro ao verificar cadastro. Verifique as chaves do Firebase.");
-      }
+      } catch (e) { alert("Erro ao verificar cadastro."); }
     } else {
       try {
         const q = query(collection(db, "profiles"), where("phone", "==", loginPhone));
@@ -172,22 +158,23 @@ const App: React.FC = () => {
             found = true;
           }
         });
-        if (!found) alert("Acesso negado. Telefone ou chave incorretos.");
-      } catch (e) {
-        alert("Erro na autenticação. Verifique sua conexão.");
-      }
+        if (!found) alert("Acesso negado. Telefone ou senha incorretos.");
+      } catch (e) { alert("Erro na autenticação."); }
     }
   };
 
   const handleSaveProfile = async (isEdit: boolean, updatedData?: Partial<Profile>) => {
     const profileBase = isEdit ? currentUser : formProfile;
-    if (!profileBase?.uid) return alert("Erro crítico: UID não encontrado.");
+    if (!profileBase?.uid) return alert("Erro: Identificação não encontrada.");
 
     setIsLoading(true);
+    // Crucial: Garante que a senha correta seja enviada ao Firestore
+    const passwordToSave = isEdit ? (currentUser as any).password : onboardingPassword;
+
     const finalProfile = {
       ...profileBase,
       ...updatedData,
-      password: isEdit ? (currentUser as any).password : (window as any)._tempPass,
+      password: passwordToSave,
       updatedAt: Date.now(),
       photos: profileBase.photos || [],
       seeking: profileBase.seeking || [],
@@ -212,7 +199,7 @@ const App: React.FC = () => {
       }
     } catch (e) {
       console.error(e);
-      alert("Erro ao salvar perfil. O arquivo pode ser muito grande ou as regras do Firestore negaram o acesso.");
+      alert("Erro ao salvar perfil. Tente fotos menores.");
     } finally {
       setIsLoading(false);
     }
@@ -221,42 +208,22 @@ const App: React.FC = () => {
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    if (file.size > 5 * 1024 * 1024) {
-      alert("Imagem muito grande. Limite de 5MB para processamento.");
-      return;
-    }
-
     const reader = new FileReader();
     reader.onload = async (ev) => {
-      const base64 = ev.target?.result as string;
-      const compressed = await compressImage(base64);
-      setFormProfile(p => ({
-        ...p,
-        photos: [...(p.photos || []), compressed]
-      }));
+      const compressed = await compressImage(ev.target?.result as string);
+      setFormProfile(p => ({ ...p, photos: [...(p.photos || []), compressed] }));
     };
     reader.readAsDataURL(file);
   };
 
-  // Fixed missing handleSendMessage
   const handleSendMessage = async () => {
     if (!messageInput.trim() || !currentUser || !selectedPartner) return;
-
     const chatId = getChatId(currentUser.uid, selectedPartner.uid);
-    const newMessage: Message = {
-      id: generateId(),
-      senderId: currentUser.uid,
-      text: messageInput.trim(),
-      timestamp: Date.now(),
-    };
-
+    const newMessage: Message = { id: generateId(), senderId: currentUser.uid, text: messageInput.trim(), timestamp: Date.now() };
     try {
       await addDoc(collection(db, "chats", chatId, "messages"), newMessage);
       setMessageInput('');
-    } catch (e) {
-      console.error("Erro ao enviar mensagem:", e);
-    }
+    } catch (e) { console.error("Erro ao enviar:", e); }
   };
 
   const filteredProfiles = useMemo(() => {
@@ -293,10 +260,7 @@ const App: React.FC = () => {
     </nav>
   );
 
-  if (isLoading) return <div className="h-full w-full bg-[#070708] flex flex-col items-center justify-center font-serif italic text-white">
-    <div className="w-12 h-12 border-4 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin mb-4" />
-    VELUM
-  </div>;
+  if (isLoading) return <div className="h-full w-full bg-[#070708] flex flex-col items-center justify-center font-serif italic text-white animate-pulse">VELUM</div>;
 
   return (
     <div className="flex flex-col h-full w-full max-w-md mx-auto bg-[#070708] overflow-hidden relative">
@@ -320,7 +284,13 @@ const App: React.FC = () => {
 
       {currentPage === AppState.ONBOARDING && (
         <div className="flex-1 flex flex-col h-full overflow-hidden">
-          <Header title={`Iniciação ${onboardingStep}/6`} />
+          <Header 
+            title={`Iniciação ${onboardingStep}/6`} 
+            onBack={() => {
+              if (onboardingStep > 1) setOnboardingStep(onboardingStep - 1);
+              else setCurrentPage(AppState.LANDING);
+            }}
+          />
           <div className="flex-1 overflow-y-auto px-8 py-6 space-y-8 no-scrollbar">
             {onboardingStep === 1 && (
               <div className="space-y-6 animate-in fade-in slide-in-from-right">
@@ -341,6 +311,30 @@ const App: React.FC = () => {
                 <Button fullWidth onClick={() => setOnboardingStep(3)}>Próximo</Button>
               </div>
             )}
+            {onboardingStep === 3 && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-right">
+                <h2 className="text-2xl font-serif italic text-white">Seus Objetivos</h2>
+                <SelectionChips options={Object.values(Objective)} value={formProfile.objectives} onChange={(v: any) => setFormProfile({...formProfile, objectives: v})} multiple />
+                <Button fullWidth onClick={() => setOnboardingStep(4)}>Próximo</Button>
+              </div>
+            )}
+            {onboardingStep === 4 && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-right">
+                <h2 className="text-2xl font-serif italic text-white">Sua Frequência</h2>
+                <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Música Favorita</p>
+                <SelectionChips options={OPTIONS.music} value={formProfile.music} onChange={(v: any) => setFormProfile({...formProfile, music: v})} multiple />
+                <p className="text-[10px] uppercase text-indigo-500 font-black tracking-widest">Interesses</p>
+                <SelectionChips options={OPTIONS.sports} value={formProfile.interests} onChange={(v: any) => setFormProfile({...formProfile, interests: v})} multiple />
+                <Button fullWidth onClick={() => setOnboardingStep(5)}>Próximo</Button>
+              </div>
+            )}
+            {onboardingStep === 5 && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-right">
+                <h2 className="text-2xl font-serif italic text-white">Seu Manifesto</h2>
+                <textarea className="w-full bg-white/[0.03] border border-white/10 rounded-[2rem] p-6 text-sm text-white focus:outline-none italic leading-relaxed" placeholder="Como você se descreve no Véu?" value={formProfile.bio} rows={6} onChange={(e) => setFormProfile({...formProfile, bio: e.target.value})} />
+                <Button fullWidth onClick={() => setOnboardingStep(6)}>Próximo</Button>
+              </div>
+            )}
             {onboardingStep === 6 && (
               <div className="space-y-6 animate-in fade-in slide-in-from-right">
                 <h2 className="text-2xl font-serif italic text-white">Sua Galeria</h2>
@@ -353,13 +347,6 @@ const App: React.FC = () => {
                 <Button fullWidth onClick={() => { if(!formProfile.photos?.length) return alert("Adicione ao menos uma foto."); handleSaveProfile(false); }}>Concluir Iniciação</Button>
               </div>
             )}
-            {onboardingStep >= 3 && onboardingStep < 6 && (
-               <div className="space-y-6">
-                 <h2 className="text-2xl font-serif italic text-white">Quase lá...</h2>
-                 <p className="text-sm text-gray-400">Continue preenchendo seu manifesto noir.</p>
-                 <Button fullWidth onClick={() => setOnboardingStep(onboardingStep + 1)}>Próximo</Button>
-               </div>
-            )}
           </div>
         </div>
       )}
@@ -368,14 +355,14 @@ const App: React.FC = () => {
         <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-12 animate-in fade-in">
           <ShieldCheck size={80} className="text-indigo-500 animate-pulse" />
           <h3 className="text-4xl font-serif italic text-white">Pacto de Silêncio</h3>
-          <p className="text-xs text-gray-500 italic">Sua identidade está segura no Véu.</p>
+          <p className="text-xs text-gray-500 italic">Identidade sincronizada com sucesso.</p>
           <Button fullWidth onClick={() => setCurrentPage(AppState.DISCOVER)}>Entrar na Sociedade</Button>
         </div>
       )}
 
       {currentPage === AppState.DISCOVER && (
         <div className="flex-1 flex flex-col h-full relative overflow-hidden">
-          <Header title={currentUser?.location?.city || 'Velum'} rightElement={<button onClick={() => setIsTravelModeOpen(true)} className="p-3 bg-white/5 rounded-2xl text-indigo-400 border border-white/10"><Globe size={20}/></button>} />
+          <Header title={currentUser?.location?.city || 'Velum'} rightElement={<button className="p-3 bg-white/5 rounded-2xl text-indigo-400 border border-white/10"><Globe size={20}/></button>} />
           <div className="flex-1 flex flex-col px-6 overflow-hidden relative">
             {filteredProfiles[currentIndex] ? (
               <div className="flex-1 flex flex-col relative min-h-0">
@@ -399,8 +386,8 @@ const App: React.FC = () => {
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center opacity-30 text-center animate-in fade-in">
                 <Ghost size={80} className="mb-6 text-indigo-500" />
-                <h3 className="text-2xl font-serif italic text-white">Ninguém por perto</h3>
-                <Button variant="outline" className="mt-10" onClick={() => setCurrentIndex(0)}>Recarregar Radar</Button>
+                <h3 className="text-2xl font-serif italic text-white">Fim do Radar</h3>
+                <Button variant="outline" className="mt-10" onClick={() => setCurrentIndex(0)}>Recarregar</Button>
               </div>
             )}
           </div>
@@ -433,7 +420,7 @@ const App: React.FC = () => {
               <img src={currentUser?.photos[0] || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=800'} className="w-full h-full object-cover" />
               <div className="absolute bottom-8 left-8 right-8 flex items-end justify-between">
                 <div><h2 className="text-3xl font-serif italic text-white">{currentUser?.name}</h2><Badge active>Membro Oficial</Badge></div>
-                <button onClick={() => setCurrentPage(AppState.EDIT_PROFILE)} className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white"><Edit3 size={20} /></button>
+                <button className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white"><Edit3 size={20} /></button>
               </div>
             </div>
             <div className="flex gap-4 pb-12">
